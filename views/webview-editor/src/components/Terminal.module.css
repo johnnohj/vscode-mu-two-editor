@@ -1,0 +1,356 @@
+.terminalContainer {
+  height: 100%;
+  width: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+  box-sizing: border-box;
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+}
+
+.terminalHeader {
+  background-color: var(--vscode-panel-background, #252526);
+  border-bottom: 2px solid var(--vscode-editor-background);
+  padding: 8px 8px 8px 4px;
+  margin: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 34px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.tab {
+  background-color: var(--vscode-tab-inactiveBackground, #2d2d30);
+  color: var(--vscode-tab-inactiveForeground, #969696);
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px 4px 0 0;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 2px solid transparent;
+}
+
+.tab:hover {
+  background-color: var(--vscode-tab-hoverBackground, #1e1e1e);
+  color: var(--vscode-tab-hoverForeground, #cccccc);
+}
+
+.activeTab {
+  background-color: var(--vscode-tab-activeBackground, #1e1e1e);
+  color: var(--vscode-tab-activeForeground, #ffffff);
+  border-bottom-color: var(--vscode-tab-activeBorder, #007acc);
+}
+
+.terminalTitle {
+  color: var(--vscode-foreground, #cccccc);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.terminalActions {
+  display: flex;
+  gap: 6px;
+}
+
+.terminalButton {
+  background-color: var(--vscode-button-secondaryBackground, #3c3c3c);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+  border: none;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.terminalButton:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground, #4c4c4c);
+}
+
+.terminalContent {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  position: relative;
+  align-self: bottom;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal {
+  margin: 0;
+  width: 100%;
+  padding-left: 2px;
+  padding-right: 2px;
+  box-sizing: border-box;
+  background-color: inherit;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Essential xterm.js styles for proper terminal display */
+.terminal :global(.xterm) {
+  cursor: text;
+  position: relative;
+  background-color: inherit;
+  user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+  line-height: 1.4 !important; /* Increase line height to prevent character cutoff */
+}
+
+:global(.xterm) {
+	margin-left: 5px;
+	box-sizing: border-box;
+	overflow: hidden;
+	padding-right: 40px;
+	padding-left: 20px;
+}
+
+/* Fix line height for terminal rows */
+.terminal :global(.xterm .xterm-rows) {
+  line-height: 1.4 !important;
+}
+
+/* Fix line height for terminal screen canvas */
+.terminal :global(.xterm .xterm-screen canvas) {
+  line-height: 1.4 !important;
+}
+
+.terminal :global(.xterm.focus),
+.terminal :global(.xterm:focus) {
+  outline: none;
+}
+
+.terminal :global(.xterm .xterm-helpers) {
+  position: absolute;
+  top: 0;
+  z-index: 5;
+}
+
+.terminal :global(.xterm .xterm-helper-textarea) {
+  padding: 0;
+  border: 0;
+  margin: 0;
+  position: absolute;
+  opacity: 0;
+  left: -9999em;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: -5;
+  white-space: nowrap;
+  overflow: hidden;
+  resize: none;
+}
+
+.terminal :global(.xterm .composition-view) {
+  background: inherit;
+  color: var(--vscode-terminal-foreground);
+  color: #c8c8c8;
+  display: none;
+  position: absolute;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.terminal :global(.xterm .composition-view.active) {
+  display: block;
+}
+
+.terminal :global(.xterm .xterm-viewport) {
+  background-color: inherit;
+  overflow-y: scroll;
+  scrollbar-width: auto;
+  scrollbar-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4)) transparent;
+  cursor: default;
+  position: absolute;
+  right: 0;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+
+/* Monaco-style scrollbar for webkit browsers - force override xterm defaults */
+.terminal :global(.xterm .xterm-viewport::-webkit-scrollbar) {
+  width: 14px !important;
+  height: 14px !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+}
+
+.terminal :global(.xterm .xterm-viewport::-webkit-scrollbar-track) {
+  background: var(--vscode-editor-background, #1e1e1e) !important;
+  border-radius: 0 !important;
+}
+
+.terminal :global(.xterm .xterm-viewport::-webkit-scrollbar-thumb) {
+  background: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4)) !important;
+  border-radius: 0px !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.terminal :global(.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover) {
+  background: var(--vscode-scrollbarSlider-hoverBackground, rgba(100, 100, 100, 0.7)) !important;
+}
+
+.terminal :global(.xterm .xterm-viewport::-webkit-scrollbar-thumb:active) {
+  background: var(--vscode-scrollbarSlider-activeBackground, rgba(191, 191, 191, 0.4)) !important;
+}
+
+.terminal :global(.xterm .xterm-viewport::-webkit-scrollbar-corner) {
+  background: var(--vscode-editor-background, #1e1e1e) !important;
+}
+
+/* Force override any xterm default scrollbar styles */
+.terminal :global(.xterm-viewport) {
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4)) var(--vscode-editor-background, #1e1e1e) !important;
+}
+
+/* Additional targeting for stubborn xterm scrollbars */
+.terminal :global(*::-webkit-scrollbar) {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.terminal :global(*::-webkit-scrollbar-track) {
+  background: var(--vscode-editor-background, #1e1e1e) !important;
+}
+
+.terminal :global(*::-webkit-scrollbar-thumb) {
+  background: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4)) !important;
+  border-radius: 0px !important;
+  border: none !important;
+}
+
+.terminal :global(.xterm .xterm-screen) {
+  position: relative;
+}
+
+.terminal :global(.xterm .xterm-screen canvas) {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.terminal :global(.xterm .xterm-scroll-area) {
+  visibility: hidden;
+}
+
+.terminal :global(.xterm-char-measure-element) {
+  display: inline-block;
+  visibility: hidden;
+  position: absolute;
+  top: 0;
+  left: -9999em;
+  line-height: normal;
+}
+
+.terminal :global(.xterm.enable-mouse-events) {
+  cursor: default;
+}
+
+.terminal :global(.xterm.xterm-cursor-pointer),
+.terminal :global(.xterm .xterm-cursor-pointer) {
+  cursor: pointer;
+}
+
+.terminal :global(.xterm.column-select.focus) {
+  cursor: crosshair;
+}
+
+.terminal :global(.xterm .xterm-accessibility:not(.debug)),
+.terminal :global(.xterm .xterm-message) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 10;
+  color: transparent;
+  pointer-events: none;
+}
+
+.terminal :global(.xterm .xterm-accessibility-tree:not(.debug) *::selection) {
+  color: transparent;
+}
+
+.terminal :global(.xterm .xterm-accessibility-tree) {
+  user-select: text;
+  white-space: pre;
+}
+
+.terminal :global(.xterm .live-region) {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.terminal :global(.xterm-dim) {
+  opacity: 1 !important;
+}
+
+.terminal :global(.xterm-underline-1) { text-decoration: underline; }
+.terminal :global(.xterm-underline-2) { text-decoration: double underline; }
+.terminal :global(.xterm-underline-3) { text-decoration: wavy underline; }
+.terminal :global(.xterm-underline-4) { text-decoration: dotted underline; }
+.terminal :global(.xterm-underline-5) { text-decoration: dashed underline; }
+
+.terminal :global(.xterm-overline) {
+  text-decoration: overline;
+}
+
+.terminal :global(.xterm-overline.xterm-underline-1) { text-decoration: overline underline; }
+.terminal :global(.xterm-overline.xterm-underline-2) { text-decoration: overline double underline; }
+.terminal :global(.xterm-overline.xterm-underline-3) { text-decoration: overline wavy underline; }
+.terminal :global(.xterm-overline.xterm-underline-4) { text-decoration: overline dotted underline; }
+.terminal :global(.xterm-overline.xterm-underline-5) { text-decoration: overline dashed underline; }
+
+.terminal :global(.xterm-strikethrough) {
+  text-decoration: line-through;
+}
+
+.terminal :global(.xterm-screen .xterm-decoration-container .xterm-decoration) {
+  z-index: 6;
+  position: absolute;
+}
+
+.terminal :global(.xterm-screen .xterm-decoration-container .xterm-decoration.xterm-decoration-top-layer) {
+  z-index: 7;
+}
+
+.terminal :global(.xterm-decoration-overview-ruler) {
+  z-index: 8;
+  position: absolute;
+  top: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+.terminal :global(.xterm-decoration-top) {
+  z-index: 2;
+  position: relative;
+}

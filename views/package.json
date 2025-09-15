@@ -1,0 +1,65 @@
+{
+	"name": "mu-two-webviews",
+	"displayName": "Mu 2 Webviews",
+	"description": "Unified webview package for Mu 2 Editor - includes REPL terminal and Monaco editor",
+	"version": "0.0.1",
+	"publisher": "mu-two",
+	"private": true,
+	"license": "MIT",
+	"type": "module",
+	"engines": {
+		"node": "*"
+	},
+	"categories": [
+		"Other"
+	],
+	"scripts": {
+		"dev": "concurrently \"npm run build:repl\" \"npm run build:editor\"",
+		"build": "npm run clean && concurrently \"npm run build:repl\" \"npm run build:editor\"",
+		"build:watch": "concurrently \"npm run build:repl -- --watch\" \"npm run build:editor -- --watch\"",
+		"preview": "vite preview",
+		"lint": "eslint",
+		"clean": "rimraf ../public/index.js ../public/editor/",
+		"build:repl": "vite build --config vite.repl.config.ts",
+		"build:editor": "vite build --config vite.editor.config.ts"
+	},
+	"dependencies": {
+		"@preact/signals": "^2.2.1",
+		"@vscode/webview-ui-toolkit": "^1.4.0",
+		"@xterm/addon-clipboard": "^0.1.0",
+		"@xterm/addon-fit": "^0.10.0",
+		"@xterm/addon-serialize": "^0.13.0",
+		"@xterm/headless": "^5.5.0",
+		"@xterm/xterm": "^5.5.0",
+		"chart.js": "^4.4.0",
+		"chartjs-adapter-date-fns": "^3.0.0",
+		"date-fns": "^3.0.0",
+		"preact": "^10.25.3",
+		"preact-iso": "^2.9.1",
+		"preact-render-to-string": "^6.5.13",
+		"request-light": "^0.8.0",
+		"uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.52.0",
+		"vscode-languageclient": "^9.0.1"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.13.0",
+		"@preact/preset-vite": "^2.9.3",
+		"@rollup/rollup-win32-x64-msvc": "^4.41.1",
+		"@stylistic/eslint-plugin": "^2.9.0",
+		"@types/node": "^22.15.18",
+		"@types/vscode": "^1.100.0",
+		"@types/vscode-webview": "^1.57.5",
+		"concurrently": "^8.2.2",
+		"css-loader": "^7.1.2",
+		"eslint": "^8.57.1",
+		"monaco-editor": "^0.32.0",
+		"rimraf": "^6.0.1",
+		"style-loader": "^4.0.0",
+		"typescript": "^5.8.3",
+		"typescript-eslint": "^8.26.0",
+		"vite": "^6.3.5"
+	},
+	"eslintConfig": {
+		"extends": ["preact"]
+	}
+}

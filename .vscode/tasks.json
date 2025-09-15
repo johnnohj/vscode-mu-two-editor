@@ -1,0 +1,101 @@
+{
+	// See https://go.microsoft.com/fwlink/?LinkId=733558
+	// for the documentation about the tasks.json format
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build: extension",
+			"type": "npm",
+			"script": "watch",
+			"problemMatcher": "$tsc-watch",
+			"isBackground": true,
+			"presentation": {
+				"reveal": "silent",
+				"panel": "shared",
+				"group": "build"
+			},
+			"group": "build"
+		},
+		{
+			"label": "build: views",
+			"type": "npm",
+			"script": "dev-views",
+			"problemMatcher": "$tsc-watch",
+			"isBackground": true,
+			"presentation": {
+				"reveal": "silent",
+				"panel": "shared",
+				"group": "build"
+			},
+			"group": "build"
+		},
+		{
+			"label": "build: editor",
+			"type": "npm",
+			"script": "build-editor",
+			"problemMatcher": "$tsc-watch",
+			"presentation": {
+				"reveal": "silent",
+				"panel": "shared",
+				"group": "build"
+			},
+			"group": "build"
+		},
+		{
+			"label": "build: repl",
+			"type": "npm",
+			"script": "build-repl",
+			"problemMatcher": "$tsc-watch",
+			"presentation": {
+				"reveal": "silent",
+				"panel": "shared",
+				"group": "build"
+			},
+			"group": "build"
+		},
+		{
+			"label": "build: all",
+			"type": "npm",
+			"script": "build-all",
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"presentation": {
+				"reveal": "silent",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "build: launch",
+			"dependsOn": [
+				"build: extension",
+				"build: editor"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "silent",
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "start: blinka-repl",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"${workspaceFolder}/scripts/blinka-repl.py"
+			],
+			"isBackground": true,
+			"presentation": {
+				"reveal": "silent",
+				"panel": "dedicated",
+				"group": "repl"
+			},
+			"group": "build",
+			"runOptions": {
+				"instanceLimit": 1
+			}
+		}
+	]
+}

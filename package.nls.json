@@ -1,0 +1,21 @@
+{
+    "mu2.error.muTwoFile": "There was an error reading mu-two.json. Please check format is correct, or delete the file to reset.",
+    "mu2.error.noBoardSelected": "Please select a compatible board first.",
+    "mu2.error.invalidCtpyPath": "Cannot find CTPY Mass Storage Device.",
+    "mu2.error.invalidCommandPath": "Cannot find the command file:",
+    "mu2.error.strangeVid": "Unexpected VID found for the selected board.",
+    "mu2.error.strangePid": "Unexpected PID found for the selected board.",
+    "mu2.prompt.switchToBundledCli": "Use CLI bundled with this extension instead?",
+    "mu2.connection.establishing": "Establishing connection with serial port...",
+    "mu2.connection.portNotFound": "Serial port not found.",
+    "mu2.connection.success": "Serial port successfully connected.",
+    "mu2.connection.disconnecting": "Disconnecting from serial port...",
+    "mu2.connection.disconnectionSuccess": "Serial port successfully disconnected.",
+    "mu2.connection.sendFailed": "Failed to send message to serial port.",
+    "mu2.connection.failure": "Failed to establish connection with serial port.",
+    "mu2.connection.busy": "Serial port is busy. Please wait until the previous operation is finished.",
+    "mu2.connection.bufferOverflow": "Halting data from serial port; buffer overflow.",
+    "mu2.connection.unexpectedEnd": "Serial port communication ended unexpectedly; please check device connections.",
+    "mu2.connection.sendBeforeOpen": "Please open a serial port first.",
+    "mu2.connection.noSerialPort": "No serial port selected, or previous serial port is no longer available."
+}

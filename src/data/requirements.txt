@@ -1,0 +1,21 @@
+# CircuitPython Development Requirements
+# Essential tools for Mu Two Editor
+
+# CircuitPython tools and libraries - use latest setuptools to avoid pkg_resources deprecation warnings
+setuptools>=80.0,<81.0
+wheel>=0.37.0
+
+# CircuitPython package manager and tools
+circup>=1.5.0
+
+# Adafruit Blinka for simulation (Phase 2B feature) - use latest version for pkg_resources fixes
+adafruit-blinka>=8.40.0
+
+# Serial communication
+pyserial>=3.5
+
+# ESP development tools  
+esptool>=4.5.0
+
+# Additional CircuitPython libraries for common use cases
+adafruit-circuitpython-neopixel>=6.3.0

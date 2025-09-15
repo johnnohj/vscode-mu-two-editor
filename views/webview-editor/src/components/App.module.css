@@ -1,0 +1,61 @@
+.app {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.splitContainer {
+  flex: 1;
+  display: grid;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.editorPanel {
+  overflow: hidden;
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  border-bottom: 1px solid var(--vscode-panel-border, #464647);
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.gutter {
+  background-color: var(--vscode-panel-background, #252526);
+  cursor: ns-resize;
+  transition: background-color 0.2s ease;
+  position: relative;
+  margin: 0;
+  padding: 0;
+  min-height: 4px;
+  border-top: 0.5px solid var(--vscode-panel-border, #464647);
+  border-bottom: 0.5px solid var(--vscode-panel-background, #252526);
+}
+
+.gutter:hover {
+  background-color: var(--vscode-focusBorder, #007acc);
+}
+
+.gutter:active {
+  background-color: var(--vscode-focusBorder, #007acc);
+}
+
+.terminalPanel {
+  overflow: hidden;
+  background-color: var(--vscode-terminal-background, #1e1e1e);
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  box-sizing: border-box;
+}

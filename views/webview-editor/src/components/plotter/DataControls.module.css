@@ -1,0 +1,134 @@
+.controls {
+  background-color: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+}
+
+.button {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: 1px solid var(--vscode-button-border);
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.button:hover:not(:disabled) {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button.active {
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.settings {
+  padding: 8px;
+  border-top: 1px solid var(--vscode-panel-border);
+  background-color: var(--vscode-panel-background);
+}
+
+.settingsRow {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.settingLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--vscode-foreground);
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+
+.numberInput {
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  padding: 2px 4px;
+  border-radius: 2px;
+  width: 60px;
+  font-size: 11px;
+}
+
+.numberInput:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.checkbox {
+  accent-color: var(--vscode-checkbox-background);
+}
+
+.seriesControls {
+  margin-top: 12px;
+}
+
+.seriesTitle {
+  font-size: 11px;
+  font-weight: 500;
+  margin: 0 0 6px 0;
+  color: var(--vscode-foreground);
+}
+
+.seriesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 6px;
+}
+
+.seriesControl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 3px;
+  transition: background-color 0.1s ease;
+}
+
+.seriesControl:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.seriesCheckbox {
+  accent-color: var(--vscode-checkbox-background);
+}
+
+.seriesLabel {
+  flex: 1;
+}
+
+.seriesIndicator {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}

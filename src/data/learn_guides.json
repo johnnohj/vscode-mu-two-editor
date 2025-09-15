@@ -1,0 +1,114 @@
+{
+  "metadata": {
+    "description": "Learn guide mappings for CircuitPython boards",
+    "updated": "2025-08-02",
+    "scope": "Initial database for Phase 1 implementation"
+  },
+  "vid_pid_mappings": {
+    "0x239A:0x80F2": {
+      "board_name": "Adafruit Feather RP2040",
+      "learn_guide_url": "https://learn.adafruit.com/adafruit-feather-rp2040-pico",
+      "guide_pdf_url": "https://learn.adafruit.com/adafruit-feather-rp2040-pico/downloads/pdf",
+      "manufacturer": "Adafruit",
+      "board_family": "Feather"
+    },
+    "0x239A:0x80DE": {
+      "board_name": "Adafruit Feather ESP32-S2",
+      "learn_guide_url": "https://learn.adafruit.com/adafruit-esp32-s2-feather",
+      "guide_pdf_url": "https://learn.adafruit.com/adafruit-esp32-s2-feather/downloads/pdf",
+      "manufacturer": "Adafruit", 
+      "board_family": "Feather"
+    },
+    "0x239A:0x8062": {
+      "board_name": "Adafruit Feather nRF52840",
+      "learn_guide_url": "https://learn.adafruit.com/introducing-the-adafruit-nrf52840-feather",
+      "guide_pdf_url": "https://learn.adafruit.com/introducing-the-adafruit-nrf52840-feather/downloads/pdf",
+      "manufacturer": "Adafruit",
+      "board_family": "Feather"
+    },
+    "0x239A:0x8080": {
+      "board_name": "Adafruit Metro M0 Express",
+      "learn_guide_url": "https://learn.adafruit.com/adafruit-metro-m0-express",
+      "guide_pdf_url": "https://learn.adafruit.com/adafruit-metro-m0-express/downloads/pdf",
+      "manufacturer": "Adafruit",
+      "board_family": "Metro"
+    },
+    "0x239A:0x8023": {
+      "board_name": "Adafruit Metro M4 Express",
+      "learn_guide_url": "https://learn.adafruit.com/adafruit-metro-m4-express-featuring-atsamd51",
+      "guide_pdf_url": "https://learn.adafruit.com/adafruit-metro-m4-express-featuring-atsamd51/downloads/pdf", 
+      "manufacturer": "Adafruit",
+      "board_family": "Metro"
+    },
+    "0x239A:0x80BE": {
+      "board_name": "Adafruit Metro ESP32-S2",
+      "learn_guide_url": "https://learn.adafruit.com/adafruit-metro-esp32-s2",
+      "guide_pdf_url": "https://learn.adafruit.com/adafruit-metro-esp32-s2/downloads/pdf",
+      "manufacturer": "Adafruit",
+      "board_family": "Metro"
+    },
+    "0x239A:0x80CA": {
+      "board_name": "Adafruit QT Py RP2040",
+      "learn_guide_url": "https://learn.adafruit.com/adafruit-qt-py-2040",
+      "guide_pdf_url": "https://learn.adafruit.com/adafruit-qt-py-2040/downloads/pdf",
+      "manufacturer": "Adafruit",
+      "board_family": "QT Py"
+    },
+    "0x239A:0x80C0": {
+      "board_name": "Adafruit QT Py ESP32-S2",
+      "learn_guide_url": "https://learn.adafruit.com/adafruit-qt-py-esp32-s2",
+      "guide_pdf_url": "https://learn.adafruit.com/adafruit-qt-py-esp32-s2/downloads/pdf",
+      "manufacturer": "Adafruit", 
+      "board_family": "QT Py"
+    },
+    "0x239A:0x8019": {
+      "board_name": "Adafruit Circuit Playground Express",
+      "learn_guide_url": "https://learn.adafruit.com/adafruit-circuit-playground-express",
+      "guide_pdf_url": "https://learn.adafruit.com/adafruit-circuit-playground-express/downloads/pdf",
+      "manufacturer": "Adafruit",
+      "board_family": "Circuit Playground"
+    },
+    "0x239A:0x8021": {
+      "board_name": "Adafruit Metro M4 Express",
+      "learn_guide_url": "https://learn.adafruit.com/adafruit-metro-m4-express-featuring-atsamd51",
+      "guide_pdf_url": "https://learn.adafruit.com/adafruit-metro-m4-express-featuring-atsamd51/downloads/pdf",
+      "manufacturer": "Adafruit",
+      "board_family": "Metro"
+    },
+    "0x239A:0x8048": {
+      "board_name": "Adafruit Circuit Playground Bluefruit",
+      "learn_guide_url": "https://learn.adafruit.com/adafruit-circuit-playground-bluefruit",
+      "guide_pdf_url": "https://learn.adafruit.com/adafruit-circuit-playground-bluefruit/downloads/pdf",
+      "manufacturer": "Adafruit",
+      "board_family": "Circuit Playground"
+    }
+  },
+  "board_family_guides": {
+    "Feather": {
+      "overview_url": "https://learn.adafruit.com/adafruit-feather",
+      "getting_started_url": "https://learn.adafruit.com/welcome-to-circuitpython"
+    },
+    "Metro": {
+      "overview_url": "https://learn.adafruit.com/adafruit-metro-m0-express",
+      "getting_started_url": "https://learn.adafruit.com/welcome-to-circuitpython"
+    },
+    "QT Py": {
+      "overview_url": "https://learn.adafruit.com/adafruit-qt-py-2040",
+      "getting_started_url": "https://learn.adafruit.com/welcome-to-circuitpython"
+    },
+    "Circuit Playground": {
+      "overview_url": "https://learn.adafruit.com/adafruit-circuit-playground-express",
+      "getting_started_url": "https://learn.adafruit.com/welcome-to-circuitpython"
+    }
+  },
+  "fallback_guides": {
+    "adafruit_general": {
+      "learn_guide_url": "https://learn.adafruit.com/welcome-to-circuitpython",
+      "guide_pdf_url": "https://learn.adafruit.com/welcome-to-circuitpython/downloads/pdf"
+    },
+    "circuitpython_general": {
+      "learn_guide_url": "https://docs.circuitpython.org/en/latest/README.html", 
+      "guide_pdf_url": null
+    }
+  }
+}

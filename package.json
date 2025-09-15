@@ -1,0 +1,649 @@
+{
+	"name": "mu-two-editor",
+	"displayName": "Mu 2 Editor",
+	"description": "Mu Editor for CircuitPython in VS Code",
+	"version": "0.0.1",
+	"publisher": "mu-two",
+	"private": true,
+	"license": "MIT",
+	"engines": {
+		"vscode": "^1.74.0"
+	},
+	"extensionKind": [
+		"ui",
+		"workspace"
+	],
+	"categories": [
+		"Education",
+		"Programming Languages",
+		"Testing",
+		"Other"
+	],
+	"extensionDependencies": [
+		"ms-python.python",
+		"ms-vscode.wasm-wasi-core"
+	],
+	"optionalExtensionDependencies": [
+		"ms-vscode.vscode-serial-monitor"
+	],
+	"activationEvents": [
+		"onFileSystem:ctpy",
+		"workspaceContains:.vscode/mu2 && workspaceContains:ctpy-device:/",
+		"onCustomEditor:viewType:muTwo.editor.editView"
+	],
+	"main": "./dist/extension.js",
+	"contributes": {
+		"viewsContainers": {
+			"panel": [
+				{
+					"id": "replContainer",
+					"title": "REPL",
+					"icon": "/Mu2NoCirc.svg"
+				}
+			]
+		},
+		"views": {
+			"replContainer": [
+				{
+					"type": "webview",
+					"id": "muTwo.replView",
+					"name": "REPL",
+					"icon": "/Mu2NoCirc.svg"
+				}
+			]
+		},
+		"customEditors": [
+			{
+				"viewType": "muTwo.editor.editView",
+				"displayName": "Mu 2 Editor",
+				"icon": "assets/Mu2NoCirc-Red.svg",
+				"selector": [
+					{
+						"filenamePatterns": [
+							"code.py",
+							"main.py"
+						]
+					}
+				],
+				"priority": "default",
+				"when": [
+					"extension.muTwo.isActive",
+					"muTwo.Workspace.isOpen",
+					"resourceScheme == ctpy || resourcePath =~ /ctpy-device/current/*.py"
+				]
+			}
+		],
+		"menus": {
+			"editor/title": [
+				{
+					"command": "muTwo.editor.showPanel",
+					"when": "muTwo.editor.navIcon == true && muTwo.editor.panelCollapsed == true",
+					"icon": "$(layout-panel-off)",
+					"title": "Show Panel",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.editor.hidePanel",
+					"when": "muTwo.editor.navIcon == true && muTwo.editor.panelCollapsed != true",
+					"icon": "$(layout-panel)",
+					"title": "Hide Panel",
+					"group": "navigation"
+				}
+			],
+			"commandPalette": [
+				{
+					"command": "muTwo.workspace.create"
+				},
+				{
+					"command": "muTwo.workspace.open"
+				},
+				{
+					"command": "muTwo.showWelcome"
+				},
+				{
+					"command": "muTwo.workspace.list"
+				},
+				{
+					"command": "muTwo.workspace.delete"
+				},
+				{
+					"command": "muTwo.workspace.refresh",
+					"when": "muTwo.fullyActivated && muTwo.Workspace.isOpen"
+				},
+				{
+					"command": "muTwo.workspace.manage",
+					"when": "muTwo.fullyActivated && muTwo.Workspace.isOpen"
+				},
+				{
+					"command": "muTwo.workspace.restoreToInitial",
+					"when": "muTwo.fullyActivated && muTwo.Workspace.isOpen"
+				},
+				{
+					"command": "muTwo.editor.showPanel",
+					"when": "muTwo.editor.navIcon == true && muTwo.editor.panelCollapsed == true"
+				},
+				{
+					"command": "muTwo.editor.hidePanel",
+					"when": "muTwo.editor.navIcon == true && muTwo.editor.panelCollapsed != true"
+				},
+				{
+					"command": "muTwo.serial.openInSerialMonitor",
+					"when": "muTwo.fullyActivated && extension.mu-two.hasActiveDevice"
+				},
+				{
+					"command": "muTwo.serial.checkSerialMonitorConflict",
+					"when": "muTwo.fullyActivated"
+				}
+			],
+			"view/title": []
+		},
+		"debuggers": [
+			{
+				"type": "circuitpython",
+				"label": "CircuitPython",
+				"languages": [
+					"python"
+				],
+				"configurationAttributes": {
+					"launch": {
+						"required": [],
+						"properties": {
+							"port": {
+								"type": "string",
+								"description": "Serial port path (e.g., COM3, /dev/ttyUSB0)"
+							},
+							"baudRate": {
+								"type": "number",
+								"description": "Serial baud rate",
+								"default": 115200
+							},
+							"program": {
+								"type": "string",
+								"description": "Python file to upload and run",
+								"default": "${file}"
+							},
+							"autoDetect": {
+								"type": "boolean",
+								"description": "Auto-detect CircuitPython device",
+								"default": true
+							},
+							"enableRepl": {
+								"type": "boolean",
+								"description": "Enable REPL mode after upload",
+								"default": true
+							},
+							"boardType": {
+								"type": "string",
+								"description": "CircuitPython board type"
+							}
+						}
+					},
+					"attach": {
+						"required": [
+							"port"
+						],
+						"properties": {
+							"port": {
+								"type": "string",
+								"description": "Serial port path"
+							},
+							"baudRate": {
+								"type": "number",
+								"description": "Serial baud rate",
+								"default": 115200
+							}
+						}
+					}
+				},
+				"initialConfigurations": [
+					{
+						"name": "CircuitPython: Launch REPL",
+						"type": "circuitpython",
+						"request": "launch",
+						"autoDetect": true,
+						"enableRepl": true
+					},
+					{
+						"name": "CircuitPython: Upload Current File",
+						"type": "circuitpython",
+						"request": "launch",
+						"program": "${file}",
+						"autoDetect": true,
+						"enableRepl": true
+					}
+				],
+				"configurationSnippets": [
+					{
+						"label": "CircuitPython: Launch REPL",
+						"description": "Launch CircuitPython REPL session",
+						"body": {
+							"name": "CircuitPython: Launch REPL",
+							"type": "circuitpython",
+							"request": "launch",
+							"autoDetect": true,
+							"enableRepl": true
+						}
+					}
+				]
+			}
+		],
+		"commands": [
+			{
+				"command": "muTwo.workspace.create",
+				"category": "Mu 2",
+				"title": "Create Mu 2 Workspace"
+			},
+			{
+				"command": "muTwo.workspace.open",
+				"category": "Mu 2",
+				"title": "Open Mu 2 Workspace"
+			},
+			{
+				"command": "muTwo.showWelcome",
+				"category": "Mu 2",
+				"title": "Show Mu 2 Welcome"
+			},
+			{
+				"command": "muTwo.workspace.refresh",
+				"category": "Mu 2",
+				"title": "Refresh Connected Boards"
+			},
+			{
+				"command": "muTwo.workspace.manage",
+				"category": "Mu 2",
+				"title": "Manage Mu 2 Workspaces"
+			},
+			{
+				"command": "muTwo.workspace.list",
+				"category": "Mu 2",
+				"title": "List Workspaces"
+			},
+			{
+				"command": "muTwo.workspace.delete",
+				"category": "Mu 2",
+				"title": "Delete Workspace"
+			},
+			{
+				"command": "muTwo.workspace.restoreToInitial",
+				"category": "Mu 2",
+				"title": "Restore Workspace to Initial Configuration"
+			},
+			{
+				"command": "muTwo.deviceDrive.status",
+				"category": "Mu 2",
+				"title": "Show Device Drive Integration Status"
+			},
+			{
+				"command": "muTwo.editor.showPanel",
+				"category": "Mu 2",
+				"icon": "$(layout-panel-off)",
+				"title": "Show panel in Mu 2 editor"
+			},
+			{
+				"command": "muTwo.editor.hidePanel",
+				"category": "Mu 2",
+				"icon": "$(layout-panel)",
+				"title": "Hide panel in Mu 2 editor"
+			},
+			{
+				"command": "muTwo.editor.openEditor",
+				"category": "Mu 2",
+				"title": "Open Mu 2 Editor"
+			},
+			{
+				"command": "muTwo.debug.startSession",
+				"category": "Mu 2",
+				"title": "Start CircuitPython Debug Session"
+			},
+			{
+				"command": "muTwo.debug.stopSession",
+				"category": "Mu 2",
+				"title": "Stop CircuitPython Debug Session"
+			},
+			{
+				"command": "muTwo.debug.restartDevice",
+				"category": "Mu 2",
+				"title": "Restart CircuitPython Device"
+			},
+			{
+				"command": "muTwo.debug.detectDevices",
+				"category": "Mu 2",
+				"title": "Detect CircuitPython Devices"
+			},
+			{
+				"command": "muTwo.debug.showDeviceInfo",
+				"category": "Mu 2",
+				"title": "Show CircuitPython Device Info"
+			},
+			{
+				"command": "muTwo.debug.selectDevice",
+				"category": "Mu 2",
+				"title": "Select CircuitPython Device"
+			},
+			{
+				"command": "muTwo.debug.startRegisterMonitoring",
+				"category": "Mu 2",
+				"title": "Start Register Monitoring (Prototype)"
+			},
+			{
+				"command": "muTwo.debug.enableI2CLogging",
+				"category": "Mu 2 Debug",
+				"title": "Enable I2C Transaction Logging"
+			},
+			{
+				"command": "muTwo.debug.enableSPILogging",
+				"category": "Mu 2 Debug",
+				"title": "Enable SPI Transaction Logging"
+			},
+			{
+				"command": "muTwo.debug.enableGPIOLogging",
+				"category": "Mu 2 Debug",
+				"title": "Enable GPIO State Logging"
+			},
+			{
+				"command": "muTwo.debug.inspectMemory",
+				"category": "Mu 2 Debug",
+				"title": "Inspect Memory Usage"
+			},
+			{
+				"command": "muTwo.debug.showVisualization",
+				"category": "Mu 2 Debug",
+				"title": "Show Debug Visualization"
+			},
+			{
+				"command": "muTwo.serial.openInSerialMonitor",
+				"category": "Mu 2",
+				"title": "Open Current Device in Serial Monitor"
+			},
+			{
+				"command": "muTwo.serial.checkSerialMonitorConflict",
+				"category": "Mu 2",
+				"title": "Check Serial Monitor Port Usage"
+			},
+			{
+				"command": "muTwo.debug.showEnhancedStatus",
+				"category": "Mu 2",
+				"title": "Show Enhanced Serial Debugging Status"
+			},
+			{
+				"command": "muTwo.debug.enableHardwareLogging",
+				"category": "Mu 2",
+				"title": "Enable Hardware Transaction Logging"
+			},
+			{
+				"command": "muTwo.debug.disableHardwareLogging",
+				"category": "Mu 2",
+				"title": "Disable Hardware Transaction Logging"
+			},
+			{
+				"command": "muTwo.debug.showHardwareLog",
+				"category": "Mu 2",
+				"title": "Show Hardware Transaction Log"
+			},
+			{
+				"command": "muTwo.debug.showDeviceState",
+				"category": "Mu 2",
+				"title": "Show Device State and Diagnostics"
+			},
+			{
+				"command": "muTwo.debug.openDebuggingPanel",
+				"category": "Mu 2",
+				"title": "Open REPL Debugging Panel"
+			},
+			{
+				"command": "muTwo.blinka.executeCurrentFile",
+				"category": "Mu 2",
+				"title": "Execute Current File in Dual Environment"
+			},
+			{
+				"command": "muTwo.blinka.executeSelection",
+				"category": "Mu 2",
+				"title": "Execute Selection with Dual Execution"
+			},
+			{
+				"command": "muTwo.blinka.executeHardwareOnly",
+				"category": "Mu 2",
+				"title": "Execute on Hardware Only"
+			},
+			{
+				"command": "muTwo.blinka.executeSimulationOnly",
+				"category": "Mu 2",
+				"title": "Execute in Simulation Only"
+			},
+			{
+				"command": "muTwo.blinka.openComparisonPanel",
+				"category": "Mu 2",
+				"title": "Open Execution Comparison Panel"
+			},
+			{
+				"command": "muTwo.blinka.showStatus",
+				"category": "Mu 2",
+				"title": "Show Blinka Status and Board Info"
+			},
+			{
+				"command": "muTwo.dev.clearTestWorkspaceData",
+				"category": "Mu 2 Development",
+				"title": "Clear Test Workspace Data"
+			}
+		],
+		"configuration": {
+			"title": "Mu 2 Editor",
+			"properties": {
+				"muTwo.history.defaultLoadLimit": {
+					"type": "number",
+					"default": 50,
+					"minimum": 1,
+					"maximum": 1000,
+					"description": "Default number of history lines to load when using 'history --get' without specifying a limit"
+				},
+				"muTwo.defaultWorkspaceLocation": {
+					"type": "string",
+					"description": "Default location for new Mu 2 workspaces"
+				},
+				"muTwo.serial.globalPermission": {
+					"type": "boolean",
+					"default": false,
+					"description": "Enable global permission for serial communications. When disabled, serial access requires confirmation for each workspace."
+				},
+				"muTwo.modifiedLibraryLocation": {
+					"type": "string",
+					"description": "Location for storing modified CircuitPython libraries"
+				},
+				"muTwo.autoDownloadGuides": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically download board guides when available"
+				},
+				"muTwo.serialMonitor.enableCooperation": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable cooperation with VS Code Serial Monitor extension"
+				},
+				"muTwo.serialMonitor.autoSwitchOnConflict": {
+					"type": "boolean",
+					"default": false,
+					"description": "Automatically offer to switch to Serial Monitor when port conflicts occur"
+				},
+				"muTwo.blinka.defaultExecutionMode": {
+					"type": "string",
+					"enum": [
+						"auto-select",
+						"dual-comparison",
+						"hardware-only",
+						"simulation-only"
+					],
+					"default": "auto-select",
+					"description": "Default execution mode for Blinka dual execution"
+				},
+				"muTwo.blinka.preferredBoard": {
+					"type": "string",
+					"description": "Preferred board configuration for simulation"
+				},
+				"muTwo.blinka.enableProfiling": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable memory profiling during code execution"
+				},
+				"muTwo.blinka.executionTimeout": {
+					"type": "number",
+					"default": 30000,
+					"minimum": 5000,
+					"maximum": 120000,
+					"description": "Execution timeout in milliseconds"
+				},
+				"muTwo.blinka.autoShowComparison": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically show comparison results after dual execution"
+				},
+				"muTwo.pyscript.executionMode": {
+					"type": "string",
+					"enum": [
+						"simulation",
+						"proxy",
+						"auto"
+					],
+					"default": "auto",
+					"description": "PyScript execution mode: simulation (virtual board), proxy (mirror real hardware), or auto (detect and switch)"
+				},
+				"muTwo.pyscript.autoLoadWorkspace": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically load workspace files into PyScript when session starts"
+				},
+				"muTwo.pyscript.watchFileChanges": {
+					"type": "boolean",
+					"default": true,
+					"description": "Watch for workspace file changes and automatically sync to PyScript"
+				},
+				"muTwo.debug.enableTransactionLogging": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable hardware transaction logging for debugging"
+				},
+				"muTwo.debug.enableInteractiveDebugging": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable interactive REPL debugging features"
+				},
+				"muTwo.debug.enableStateMonitoring": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable real-time state monitoring"
+				},
+				"muTwo.debug.monitoredInterfaces": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": [
+							"i2c",
+							"spi",
+							"gpio",
+							"uart"
+						]
+					},
+					"default": [
+						"i2c",
+						"spi",
+						"gpio"
+					],
+					"description": "Hardware interfaces to monitor for debugging"
+				},
+				"muTwo.debug.autoBreakOnExceptions": {
+					"type": "boolean",
+					"default": false,
+					"description": "Automatically insert breakpoints on exceptions"
+				},
+				"muTwo.debug.visualization.showTimeline": {
+					"type": "boolean",
+					"default": true,
+					"description": "Show transaction timeline in debug visualization"
+				},
+				"muTwo.debug.visualization.showHardwareState": {
+					"type": "boolean",
+					"default": true,
+					"description": "Show hardware state panel in debug visualization"
+				},
+				"muTwo.debug.visualization.showMemoryChart": {
+					"type": "boolean",
+					"default": true,
+					"description": "Show memory usage chart in debug visualization"
+				},
+				"muTwo.debug.visualization.refreshInterval": {
+					"type": "number",
+					"default": 2000,
+					"minimum": 500,
+					"maximum": 10000,
+					"description": "Auto-refresh interval for debug visualization (milliseconds)"
+				},
+				"muTwo.debug.visualization.maxTransactions": {
+					"type": "number",
+					"default": 1000,
+					"minimum": 100,
+					"maximum": 10000,
+					"description": "Maximum number of transactions to display in timeline"
+				}
+			}
+		}
+	},
+	"scripts": {
+		"vscode:prepublish": "npm run build-all",
+		"build-extension": "vite build --config vite.extension.config.ts && mkdir -p dist/data && cp src/data/requirements.txt dist/data/",
+		"build-views": "cd views && npm run build",
+		"build-repl": "cd views && npm run build:repl",
+		"build-editor": "cd views && npm run build:editor",
+		"build-all": "npm run build-extension && npm run build-views",
+		"build-all-reload": "npm run build-all && code --command workbench.action.reloadWindow",
+		"dev-extension": "vite build --config vite.extension.config.ts",
+		"dev-views": "cd views && npm run build:watch",
+		"dev-repl": "cd views && npm run build:repl",
+		"dev-editor": "cd views && npm run build:editor",
+		"dev": "npm run build-all",
+		"lint": "eslint",
+		"compile": "npm run build-extension",
+		"watch": "npm run dev-extension"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.13.0",
+		"@stylistic/eslint-plugin": "^2.9.0",
+		"@types/body-parser": "^1.19.6",
+		"@types/cors": "^2.8.19",
+		"@types/express": "^5.0.3",
+		"@types/node": "^22.15.18",
+		"@types/vscode": "^1.73.0",
+		"@types/vscode-webview": "^1.57.5",
+		"concurrently": "^8.2.2",
+		"eslint": "^9.13.0",
+		"typescript": "^5.8.2",
+		"typescript-eslint": "^8.26.0",
+		"vite": "^6.3.5",
+		"vscode-uri": "^3.1.0"
+	},
+	"dependencies": {
+		"@adafruit/ble-file-transfer": "github:adafruit/ble-file-transfer-js",
+		"@adafruit/circuitpython-repl-js": "github:adafruit/circuitpython-repl-js",
+		"@microsoft/vscode-serial-monitor-api": "^0.1.7",
+		"@serialport/parser-readline": "^13.0.0",
+		"@vscode/debugadapter": "^1.68.0",
+		"@vscode/debugprotocol": "^1.68.0",
+		"@vscode/wasm-wasi": "^1.0.1",
+		"@vscode/webview-ui-toolkit": "^1.4.0",
+		"@xterm/addon-clipboard": "^0.1.0",
+		"@xterm/addon-fit": "^0.10.0",
+		"@xterm/addon-serialize": "^0.13.0",
+		"@xterm/headless": "^5.5.0",
+		"@xterm/xterm": "^5.5.0",
+		"body-parser": "^2.2.0",
+		"cors": "^2.8.5",
+		"express": "^5.1.0",
+		"inversify": "^7.7.0",
+		"micro-repl": "^0.8.2",
+		"reflect-metadata": "^0.2.2",
+		"serialport": "^13.0.0",
+		"usb": "^2.16.0",
+		"vscode-jsonrpc": "^8.2.1",
+		"vscode-languageclient": "^9.0.1",
+		"vscode-languageserver": "^9.0.1",
+		"vscode-languageserver-textdocument": "^1.0.12"
+	}
+}
