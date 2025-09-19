@@ -3,7 +3,7 @@
 
 import * as vscode from 'vscode';
 import { IBoard, BoardType, BoardConnectionState, BoardCapabilities, ExecutionResult, FileInfo, DeviceInfo } from '../boardManager';
-import { CircuitPythonRepl, ReplState, ReplMode, ReplCommand } from '../../interface/blinka/circuitpythonRepl';
+import { CircuitPythonRepl, ReplState, ReplMode, ReplCommand } from '../../devices/protocols/repl';
 
 /**
  * USB CircuitPython Board using CircuitPython REPL JS patterns

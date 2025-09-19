@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ProjectManager } from '../core/projectManager';
+import { ProjectManager } from '../projectManager';
 import { BoardManager } from '../../sys/boardManager';
 import { LibraryManager } from '../integration/libraryManager';
 import { FileOperations } from './fileOperations';

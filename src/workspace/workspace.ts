@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { IDevice } from "../devices/deviceDetector";
+import { IDevice } from "../devices/core/deviceDetector";
 
 // Configuration interfaces as per spec
 export interface WorkspaceConfig {

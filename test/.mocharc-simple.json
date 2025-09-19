@@ -1,0 +1,9 @@
+{
+	"require": ["test/unit/simple-setup.js"],
+	"recursive": true,
+	"timeout": 10000,
+	"ui": "bdd",
+	"reporter": "spec",
+	"colors": true,
+	"exit": true
+}

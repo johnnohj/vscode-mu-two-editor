@@ -1,0 +1,11 @@
+{
+	"python.defaultInterpreterPath": "c:\\Users\\jef\\dev\\vscode-mu-two-editor\\.vscode-test\\user-data\\User\\globalStorage\\mu-two.mu-two-editor\\mu-two-python-env\\Scripts\\python.exe",
+	"python.terminal.activateEnvironment": false,
+	"muTwo.serial.globalPermission": true,
+	"muTwo.autoDownloadGuides": false,
+	"files.associations": {
+		"*.py": "python"
+	},
+	"editor.tabSize": 4,
+	"editor.insertSpaces": true
+}

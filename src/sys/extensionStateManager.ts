@@ -2,12 +2,12 @@ import * as vscode from 'vscode';
 import { ReplViewProvider } from '../providers/replViewProvider';
 import { EditorPanelProvider } from '../providers/editorPanelProvider';
 import { PythonEnvManager } from './pythonEnvManager';
-import { MuTwoLanguageClient } from '../interface/client';
-import { DeviceManager } from '../devices/deviceManager';
+import { MuTwoLanguageClient } from '../devices/execution/client';
+import { DeviceManager } from '../devices/core/deviceManager';
 // import { TerminalIntegration } from '../tui/terminal/terminalIntegration'; // File deleted
 import { CircuitPythonFileSystemProvider } from './fileSystemProvider';
 import { MuTwoWorkspaceManager } from '../workspace/workspaceManager';
-import { CircuitPythonDeviceDetector } from '../devices/deviceDetector';
+import { MuDeviceDetector } from '../devices/core/deviceDetector';
 // import { HeadlessTerminalTaskProvider, HeadlessTaskExecutionHelper } from '../tui/terminal/headlessTaskProvider'; // File deleted
 import { SerialMonitorCooperativeManager } from '../devices/serialMonitorCooperativeManager';
 // import { UnifiedDebugManager } from './unifiedDebugManager';
@@ -15,10 +15,10 @@ import { SerialMonitorCooperativeManager } from '../devices/serialMonitorCoopera
 // import { TransactionLoggerManager } from '../debug/transactionLoggerManager'; // File deleted
 // import { EnhancedSerialDebugger } from '../debug/enhancedSerialDebugger'; // File deleted
 // import { DebugVisualizationProvider } from '../debug/debugVisualization'; // File deleted
-// import { BlinkaExecutionManager } from '../interface/blinka/blinkaExecutionManager';
-// import { DualExecutionInterface } from '../interface/blinka/dualExecutionInterface';
-// import { ComparisonVisualizationPanel } from '../interface/blinka/comparisonVisualizationPanel';
-// import { CircuitPythonDebugProvider } from '../interface/blinka/circuitPythonDebugProvider';
+// import { BlinkaExecutionManager } from '../devices/execution/blinka/blinkaExecutionManager';
+// import { DualExecutionInterface } from '../devices/execution/blinka/dualExecutionInterface';
+// import { ComparisonVisualizationPanel } from '../devices/execution/blinka/comparisonVisualizationPanel';
+// import { CircuitPythonDebugProvider } from '../devices/execution/blinka/circuitPythonDebugProvider';
 // Removed imports for deleted files: DeviceChannelManager, DeviceServiceIntegration, PyScriptDebugIntegration, PyScriptWorkspaceManager
 
 /*
@@ -45,7 +45,7 @@ export interface ExtensionState {
 	terminalIntegration?: TerminalIntegration;
 	fileSystemProvider?: CircuitPythonFileSystemProvider;
 	workspaceManager?: MuTwoWorkspaceManager;
-	deviceDetector?: CircuitPythonDeviceDetector;
+	deviceDetector?: MuDeviceDetector;
 	headlessTaskProvider?: HeadlessTerminalTaskProvider;
 	headlessTaskHelper?: HeadlessTaskExecutionHelper;
 	// Enhanced debugging and monitoring components

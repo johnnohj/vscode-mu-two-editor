@@ -1,0 +1,35 @@
+{
+	"folders": [
+		{
+			"name": "📁 Main",
+			"path": "./test-workspace"
+		},
+		{
+			"name": "🎯 Current Project",
+			"path": "./ctpy-device/current"
+		}
+	],
+	"settings": {
+		"python.defaultInterpreterPath": "/usr/bin/python3",
+		"python.terminal.activateEnvironment": false,
+		"muTwo.serial.globalPermission": true,
+		"muTwo.autoDownloadGuides": true,
+		"files.associations": {
+			"*.py": "python"
+		},
+		"editor.tabSize": 4,
+		"editor.insertSpaces": true,
+		"terminal.integrated.defaultProfile.linux": "bash",
+		"terminal.integrated.profiles.linux": {
+			"bash": {
+				"path": "/bin/bash"
+			}
+		}
+	},
+	"extensions": {
+		"recommendations": [
+			"ms-python.python",
+			"ms-vscode.wasm-wasi-core"
+		]
+	}
+}

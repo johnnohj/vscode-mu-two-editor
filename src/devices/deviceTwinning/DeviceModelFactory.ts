@@ -25,7 +25,7 @@ import {
     BoardFeatureState
 } from './interfaces';
 
-import { moduleRegistry } from '../providers/language/core/ModuleRegistry';
+import { moduleRegistry } from '../../providers/language/core/ModuleRegistry';
 
 /**
  * Factory for creating and managing device models dynamically

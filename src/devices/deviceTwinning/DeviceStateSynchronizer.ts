@@ -17,7 +17,7 @@ import {
     BasePinState
 } from './interfaces';
 
-import { CircuitPythonDebugAdapter } from '../debugAdapter';
+import { MuDebugAdapter } from '../debugAdapter';
 import { CircuitPythonLanguageService } from '../../providers/language/core/CircuitPythonLanguageService';
 import { DeviceModelFactory } from './DeviceModelFactory';
 
@@ -25,7 +25,7 @@ import { DeviceModelFactory } from './DeviceModelFactory';
  * Manages synchronization between DAP and LSP for device state
  */
 export class DeviceStateSynchronizer implements IDeviceStateSynchronizer {
-    private debugAdapter: CircuitPythonDebugAdapter;
+    private debugAdapter: MuDebugAdapter;
     private languageService: CircuitPythonLanguageService;
     private deviceModelFactory: DeviceModelFactory;
     private eventCallbacks: Array<(event: StateSyncEvent) => void> = [];
@@ -41,7 +41,7 @@ export class DeviceStateSynchronizer implements IDeviceStateSynchronizer {
     private readonly SYNC_TIMEOUT_MS = 5000;
 
     constructor(
-        debugAdapter: CircuitPythonDebugAdapter,
+        debugAdapter: MuDebugAdapter,
         languageService: CircuitPythonLanguageService,
         deviceModelFactory: DeviceModelFactory
     ) {

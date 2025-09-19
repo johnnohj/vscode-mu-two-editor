@@ -104,6 +104,8 @@ public
 out/
 *.vsix
 
+.vscode-test
+
 # VS Code settings
 .vscode/docs/
 .vscode/scratch/
@@ -138,3 +140,4 @@ docs/design/
 
 # Misc
 sync-to-d-drive.sh
+assets/font_experiments/

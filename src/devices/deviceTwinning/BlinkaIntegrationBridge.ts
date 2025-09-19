@@ -13,12 +13,12 @@ import {
     DualExecutionInterface, 
     ExecutionMode, 
     ExecutionPreferences 
-} from '../../interface/blinka/dualExecutionInterface';
+} from '../../devices/execution/blinka/dualExecutionInterface';
 import { 
     BlinkaExecutionManager,
     ExecutionEnvironment,
     BlinkaBoard 
-} from '../../interface/blinka/blinkaExecutionManager';
+} from '../../devices/execution/blinka/blinkaExecutionManager';
 
 /**
  * Adapter that bridges Blinka VirtualPin to our DeviceTwinState pin interfaces

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as learnGuidesDatabase from '../../data/learn_guides.json';
-import { CircuitPythonDevice } from '../../devices/deviceDetector';
+import { MuDevice } from '../../devices/core/deviceDetector';
 
 /**
  * TODO: Adafruit Learn Guides have their own GitHub repo, and as such, perhaps we should instead
@@ -41,7 +41,7 @@ export class LearnGuideProvider {
     /**
      * Get learn guide information for a specific device
      */
-    public getLearnGuideInfo(device: CircuitPythonDevice): LearnGuideInfo | null {
+    public getLearnGuideInfo(device: MuDevice): LearnGuideInfo | null {
         if (!device.vendorId || !device.productId) {
             return null;
         }
@@ -65,7 +65,7 @@ export class LearnGuideProvider {
     /**
      * Get learn guide URL for a device (fallback-aware)
      */
-    public getLearnGuideUrl(device: CircuitPythonDevice): string | undefined {
+    public getLearnGuideUrl(device: MuDevice): string | undefined {
         // Try specific board mapping first
         const guideInfo = this.getLearnGuideInfo(device);
         if (guideInfo) {
@@ -109,7 +109,7 @@ export class LearnGuideProvider {
      * Download learn guide PDF if available
      */
     public async downloadLearnGuide(
-        device: CircuitPythonDevice,
+        device: MuDevice,
         downloadPath: vscode.Uri
     ): Promise<boolean> {
         const guideInfo = this.getLearnGuideInfo(device);

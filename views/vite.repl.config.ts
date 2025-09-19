@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import preact from '@preact/preset-vite';
 
-// REPL-specific build configuration
+// REPL-specific build configuration with Preact support
 export default defineConfig({
+	plugins: [preact()],
 	build: {
 		target: 'es2020',
 		outDir: resolve(__dirname, '../public/repl'),
@@ -25,9 +27,11 @@ export default defineConfig({
 		minify: false
 	},
 	resolve: {
-		extensions: ['.ts', '.js', '.css'],
+		extensions: ['.tsx', '.ts', '.js', '.css'],
 		alias: {
 			'@shared': resolve(__dirname, 'shared'),
+			'react': 'preact/compat',
+			'react-dom': 'preact/compat'
 		}
 	},
 	css: {

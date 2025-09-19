@@ -8,9 +8,13 @@
 
 ## NEW WEBVIEW UI GAMEPLAN
 
-- The main REPL will first initialize with three options: Blinka-Python, WASM-Node CircuitPython, and PyScript.
+- The main REPL will first initialize with three options: Blinka-Python, WASM-Node CircuitPython, and PyScript [CircuitPython FruitJam OS support in future?].
 - The main REPL webview view should run as frontend for headless cli-style processes of the above via postMessage() APIs. The webview view will continue to run a full instance of Xterm.js while WASM-Node CircuitPython, at least, will use xterm headless (I think). Both may make use of the Xterm.js serialize addon.
-- The main REPL, ideally and initially, will be the point of contact for: checking/fetching CircuitPython libraries (circup), updating boards definitions, other shell-like functions on behalf of the extension.
+- The main REPL, ideally and initially, will be the point of contact for: checking/fetching CircuitPython libraries (circup) [opening a dedicated library tree UI view in the Explorer tab area], updating boards definitions, other shell-like functions on behalf of the extension.
+- {How far can we push this - can the WASM build handle extension/application logic in concert with VS Code's UI?}
+- Open editors must be able to spawn 'connected' REPL windows [uses the splitBelow API to create a webviewPanel] to connect to a board - virtual or physical - that is workspace-aware and can read/execute the editor's contents. The same webviewPanel can add a plotter tab for visual data output. {We're essentially re-implementing the custom editor, but this time we only need to create/manage the webviewPanels}
+- To tie everything together, the main REPL and the editor+REPL need to be able to coordinate. My vision is that the editor's code can 'import tof from mu_repl' or 'import sensor.tof from mu_repl' so that the editor code can read data sent - in this case as tof distance data - from the main REPL webview. For its part, the main REPL will need a secondary tab to provide a web-based UI for: triggering button presses, sending pins high/low, sending/live adjusting analog pin data or sensor data [sliders with customizable range input entry boxes], providing LED representations [blinking and color reproduction]. The main REPL should be able to import the correct library to use for functionality beyond basic board interaction. {The ultimate would be if we can also mimic the register data/use the CONST data item sometimes found in libraries for our debugging. If we can leverage the higher power of the host machine to shadow the registry values of the microcontroller, and use the WASM-Node build to generate the sensor CONST registers, I think this would be a powerful tool for prototpying/rapid proof-of-concept/debugging. This last feature is the lowest priority, however}
+- Main REPL needs always-available commands like: which --runtime, switch -r wasm, help
 
 ## WEBVIEW QUESTION
 

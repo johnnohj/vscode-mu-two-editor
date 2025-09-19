@@ -2,10 +2,10 @@
 // Board Manager - the "phone directory" system for board tracking and workspace integration
 
 import * as vscode from 'vscode';
-import { DeviceManager } from '../devices/deviceManager';
-import { MuTwoLanguageClient } from '../interface/client';
-import { CircuitPythonFileSystemProvider } from './fileSystemProvider';
-import { CircuitPythonDeviceDetector, IDevice, CircuitPythonDevice } from '../devices/deviceDetector';
+import { DeviceManager } from '../devices/core/deviceManager';
+import { MuTwoLanguageClient } from '../devices/core/client';
+import { CtpyFileSystemProvider } from './fileSystemProvider';
+import { MuDeviceDetector, IDevice, MuDevice } from '../devices/core/deviceDetector';
 import { BoardFactory } from './utils/usbBoard';
 
 export type BoardType = 'usb' | 'ble' | 'virtual';
@@ -118,7 +118,7 @@ export class UsbCircuitPythonBoard implements IBoard {
         private deviceInfo: DeviceInfo,
         private deviceManager: DeviceManager,
         private languageClient: MuTwoLanguageClient,
-        private fileSystemProvider: CircuitPythonFileSystemProvider
+        private fileSystemProvider: CtpyFileSystemProvider
     ) {
         this._connectionState = {
             connected: false,
@@ -347,8 +347,8 @@ export class BoardManager {
         private context: vscode.ExtensionContext,
         private deviceManager: DeviceManager,
         private languageClient: MuTwoLanguageClient,
-        private fileSystemProvider: CircuitPythonFileSystemProvider,
-        private deviceDetector: CircuitPythonDeviceDetector
+        private fileSystemProvider: CtpyFileSystemProvider,
+        private deviceDetector: MuDeviceDetector
     ) {
         this._outputChannel = vscode.window.createOutputChannel('Board Manager');
         this.loadWorkspaceBoardMappings();
@@ -598,7 +598,7 @@ export class BoardManager {
     /**
      * Get device by path lookup
      */
-    public async getDeviceByPath(path: string): Promise<CircuitPythonDevice | undefined> {
+    public async getDeviceByPath(path: string): Promise<MuDevice | undefined> {
         const result = await this.deviceDetector.detectDevices();
         return result.devices.find(device => device.path === path);
     }
@@ -606,7 +606,7 @@ export class BoardManager {
     /**
      * Find device by board ID lookup
      */
-    public async getDeviceByBoardId(boardId: string): Promise<CircuitPythonDevice | undefined> {
+    public async getDeviceByBoardId(boardId: string): Promise<MuDevice | undefined> {
         const result = await this.deviceDetector.detectDevices();
         return result.devices.find(device => device.boardId === boardId);
     }
@@ -625,7 +625,7 @@ export class BoardManager {
     /**
      * Get device detector instance
      */
-    public getDeviceDetector(): CircuitPythonDeviceDetector {
+    public getDeviceDetector(): MuDeviceDetector {
         return this.deviceDetector;
     }
 

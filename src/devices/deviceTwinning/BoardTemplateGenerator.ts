@@ -213,7 +213,7 @@ except Exception as e:
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
-        this.templatesStorage = context.globalStorage;
+        this.templatesStorage = context.globalState;
     }
 
     /**

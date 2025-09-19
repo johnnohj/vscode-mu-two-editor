@@ -1,9 +1,10 @@
-// File: src/replWebview.ts - Command-based terminal implementation
+// File: src/replWebview.ts - WASM-enhanced command-based terminal implementation
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import {ClipboardAddon} from '@xterm/addon-clipboard';
 import { CircuitPythonLanguageClient, CompletionItem } from './CircuitPythonLanguageClient';
+import { initializeWasmReplUI } from './WasmReplUI';
 
 declare global {
 	interface Window {
@@ -19,22 +20,33 @@ const _el = document.getElementsByTagName('html')[0];
 const vscStyle = _el.style;
 
 interface ExtensionMessage {
-  type: 'display' | 'commandHistory' | 'sessionRestore' | 'clear' | 'serialData' | 'serialConnect' | 'serialDisconnect';
+  type: 'display' | 'commandHistory' | 'sessionRestore' | 'clear' | 'serialData' | 'serialConnect' | 'serialDisconnect' |
+        'runtime.statusUpdate' | 'wasm.initializationStart' | 'wasm.initializationComplete' | 'hardware.stateUpdate' | 'runtime.error';
   data: {
     content?: string;
     commands?: string[];
     sessionContent?: string;
     port?: string;
   };
+  // WASM-specific properties
+  runtime?: 'blinka-python' | 'wasm-circuitpython' | 'pyscript';
+  status?: 'disconnected' | 'connecting' | 'connected' | 'error';
+  hardwareState?: any;
+  success?: boolean;
+  error?: string;
 }
 
 interface TerminalMessage {
-  type: 'command' | 'requestHistory' | 'requestRestore' | 'syncContent';
+  type: 'command' | 'requestHistory' | 'requestRestore' | 'syncContent' |
+        'runtime.switch' | 'runtime.connect' | 'runtime.disconnect';
   data: {
     command?: string;
     historyDirection?: 'up' | 'down';
     terminalContent?: string;
   };
+  // Runtime-specific properties
+  runtime?: 'blinka-python' | 'wasm-circuitpython' | 'pyscript';
+  timestamp?: number;
 }
 
 class CommandTerminal {
@@ -53,6 +65,11 @@ class CommandTerminal {
 		tabCompletions: CompletionItem[];
 		completionIndex: number;
 		originalInput: string;
+		// Runtime state
+		currentRuntime: 'blinka-python' | 'wasm-circuitpython' | 'pyscript' | null;
+		runtimeStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
+		wasmInitializing: boolean;
+		hardwareState: any;
 	};
 
 	constructor() {
@@ -70,7 +87,12 @@ class CommandTerminal {
 			isFirstContent: true,
 			tabCompletions: [],
 			completionIndex: -1,
-			originalInput: ''
+			originalInput: '',
+			// Runtime state initialization
+			currentRuntime: null,
+			runtimeStatus: 'disconnected',
+			wasmInitializing: false,
+			hardwareState: null
 		};
 		
 		this.init();
@@ -235,6 +257,45 @@ class CommandTerminal {
 					this.writeOutput(message.data.content);
 				}
 				break;
+
+			// WASM Runtime Messages
+			case 'runtime.statusUpdate':
+				this.state.runtimeStatus = message.status || 'disconnected';
+				if (message.runtime) {
+					this.state.currentRuntime = message.runtime;
+				}
+				this.updatePromptForRuntime();
+				break;
+
+			case 'wasm.initializationStart':
+				this.state.wasmInitializing = true;
+				this.writeOutput('\r\n🔧 Initializing WASM CircuitPython runtime...\r\n');
+				break;
+
+			case 'wasm.initializationComplete':
+				this.state.wasmInitializing = false;
+				this.state.runtimeStatus = message.success ? 'connected' : 'error';
+				if (message.success) {
+					this.writeOutput('✅ WASM CircuitPython runtime ready!\r\n');
+					this.writeCircuitPythonWelcome();
+				} else {
+					this.writeOutput('❌ WASM initialization failed\r\n');
+				}
+				this.showPrompt();
+				break;
+
+			case 'hardware.stateUpdate':
+				if (message.hardwareState) {
+					this.state.hardwareState = message.hardwareState;
+					// Could add hardware state change notifications to terminal
+				}
+				break;
+
+			case 'runtime.error':
+				this.state.runtimeStatus = 'error';
+				this.writeOutput(`\r\n❌ Runtime Error: ${message.error}\r\n`);
+				this.showPrompt();
+				break;
 		}
 	}
 
@@ -288,12 +349,13 @@ class CommandTerminal {
 
 		// Move to new line
 		this.terminal.writeln('');
-		
+
 		const command = this.state.currentInput.trim();
 		if (command) {
-			// Send command to extension for processing
+			// Send command to extension for processing with runtime context
 			this.sendMessage({
 				type: 'command',
+				runtime: this.state.currentRuntime || undefined,
 				data: {
 					command: command
 				}
@@ -302,7 +364,7 @@ class CommandTerminal {
 			// Empty command, just show prompt again
 			this.showPrompt();
 		}
-		
+
 		// Clear current input
 		this.state.currentInput = '';
 	}
@@ -382,14 +444,115 @@ class CommandTerminal {
 
 	showPrompt() {
 		if (!this.terminal) return;
-		
-		const prompt = this.state.connected ? '>>> ' : 'mu2> ';
-		
+
+		const prompt = this.getPromptForCurrentRuntime();
+
 		// Write newline and prompt, cursor will naturally position after prompt
 		this.terminal.write('\r\n' + prompt);
-		
+
 		// Add padding below the prompt to create buffer zone
 		this.addPaddingBelowPrompt();
+	}
+
+	private getPromptForCurrentRuntime(): string {
+		// Add Blinka glyph to CircuitPython prompts with fallback
+		const blinkaGlyph = this.detectBlinkaFont() ? 'ϴ' : '🐍';
+
+		switch (this.state.currentRuntime) {
+			case 'wasm-circuitpython':
+				return this.state.runtimeStatus === 'connected'
+					? `${blinkaGlyph}>>> `
+					: `${blinkaGlyph}wasm> `;
+			case 'pyscript':
+				return this.state.runtimeStatus === 'connected' ? '>>> ' : 'pyscript> ';
+			case 'blinka-python':
+				return this.state.connected
+					? `${blinkaGlyph}>>> `
+					: `${blinkaGlyph}blinka> `;
+			default:
+				return 'mu2> ';
+		}
+	}
+
+	private updatePromptForRuntime(): void {
+		// Update the current prompt display if needed
+		// This can be expanded to update the terminal prompt dynamically
+	}
+
+	private writeCircuitPythonWelcome(): void {
+		if (!this.terminal) return;
+
+		// Try to detect if Blinka font loaded successfully
+		const hasBlinkaFont = this.detectBlinkaFont();
+
+		const blinka = hasBlinkaFont ? `
+    ████████████  ██████     ███████  ███    ██  ██   ██   █████
+    ██        ██  ██    ██   ██       ████   ██  ██  ██   ██   ██
+    ████████████  ██████     █████    ██ ██  ██  █████    ███████
+    ██        ██  ██    ██   ██       ██  ██ ██  ██  ██   ██   ██
+    ████████████  ██████     ███████  ██   ████  ██   ██  ██   ██
+` : `
+    🐍⚡ B L I N K A ⚡🐍
+    ════════════════════
+`;
+
+		const logo = hasBlinkaFont ? 'ϴ' : '🐍⚡';
+
+		const welcomeMessage = `
+${blinka}
+    ${logo} CircuitPython ${this.getCircuitPythonVersion()} on WASM Virtual Hardware ${logo}
+
+╭─────────────────── MU 2 REPL with WASM Backend ───────────────────╮
+│                                                                    │
+│  💻 Virtual Hardware Simulation: ✅ ACTIVE                        │
+│  🔌 GPIO Pins: board.D0-D13, board.A0-A5                         │
+│  📊 Sensors: accelerometer, temperature, light                    │
+│  ⚡ Real-time Hardware Monitoring: ENABLED                        │
+│                                                                    │
+│  🚀 Quick Start Commands:                                         │
+│     import board, digitalio, time                                 │
+│     led = digitalio.DigitalInOut(board.D13)                       │
+│     led.direction = digitalio.Direction.OUTPUT                    │
+│     led.value = True                                              │
+│                                                                    │
+│  🔧 Runtime Commands:                                             │
+│     which --runtime    # Show current runtime                     │
+│     switch -r wasm     # Switch to WASM runtime                   │
+│     help               # Show all available commands              │
+│                                                                    │
+╰────────────────────────────────────────────────────────────────────╯
+
+Ready for CircuitPython magic! ✨
+`;
+		this.writeOutput(welcomeMessage);
+	}
+
+	private detectBlinkaFont(): boolean {
+		// Simple font detection - try to create a canvas and measure text width
+		try {
+			const canvas = document.createElement('canvas');
+			const ctx = canvas.getContext('2d');
+			if (!ctx) return false;
+
+			// Test with Blinka font
+			ctx.font = '12px FreeMono-Terminal-Blinka, monospace';
+			const blinkaWidth = ctx.measureText('ϴ').width;
+
+			// Test with fallback font
+			ctx.font = '12px monospace';
+			const fallbackWidth = ctx.measureText('ϴ').width;
+
+			// If widths differ significantly, Blinka font is probably loaded
+			return Math.abs(blinkaWidth - fallbackWidth) > 1;
+		} catch (error) {
+			console.warn('Font detection failed:', error);
+			return false;
+		}
+	}
+
+	private getCircuitPythonVersion(): string {
+		// Could be dynamically fetched from WASM runtime
+		return '9.1.0';
 	}
 
 	private addPaddingBelowPrompt() {
@@ -618,12 +781,20 @@ class CommandTerminal {
 	}
 }
 
-// Initialize terminal when DOM is ready
+// Initialize terminal and WASM UI when DOM is ready
 if (document.readyState === 'loading') {
 	document.addEventListener('DOMContentLoaded', () => {
+		// Initialize WASM UI first
+		initializeWasmReplUI();
+
+		// Then initialize terminal
 		window.terminal = new CommandTerminal();
 	});
 } else {
+	// Initialize WASM UI first
+	initializeWasmReplUI();
+
+	// Then initialize terminal
 	window.terminal = new CommandTerminal();
 }
 

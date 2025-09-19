@@ -151,7 +151,7 @@ export class CommandProcessor {
             
         } catch (error) {
             return {
-                output: `❌ Error scanning for devices: ${error}\n`,
+                output: `❌ Error scanning for devices: ${error instanceof Error ? error.message : String(error)}\n`,
                 success: false
             };
         }
@@ -215,7 +215,7 @@ export class CommandProcessor {
             }
         } catch (error) {
             return {
-                output: `❌ Connection error: ${error}\n`,
+                output: `❌ Connection error: ${error instanceof Error ? error.message : String(error)}\n`,
                 success: false
             };
         }
@@ -245,7 +245,7 @@ export class CommandProcessor {
             };
         } catch (error) {
             return {
-                output: `❌ Disconnect error: ${error}\n`,
+                output: `❌ Disconnect error: ${error instanceof Error ? error.message : String(error)}\n`,
                 success: false
             };
         }
@@ -282,7 +282,7 @@ export class CommandProcessor {
             }
         } catch (error) {
             return {
-                output: `❌ Device command error: ${error}\n`,
+                output: `❌ Device command error: ${error instanceof Error ? error.message : String(error)}\n`,
                 success: false
             };
         }

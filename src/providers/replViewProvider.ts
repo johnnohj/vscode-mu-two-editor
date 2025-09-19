@@ -1,15 +1,14 @@
 import * as vscode from 'vscode';
 // import { HybridTerminalManager, HybridTerminalInstance } from './hybridTerminalManager'; // File deleted
-import { UnifiedDebugManager } from '../../sys/unifiedDebugManager';
-import { BoardManager, IBoard } from '../../sys/boardManager';
-import { MuTwoLanguageClient } from '../../interface/client';
-import { WorkspaceValidator, DeviceConnectionPermissions } from '../../workspace/workspaceValidator';
-import { MuTwoWorkspaceManager } from '../../workspace/workspaceManager';
-import { IDevice } from '../../devices/deviceDetector';
-import { TerminalHistoryManager } from '../../interface/historyManager';
-// import { HeadlessTerminalProcessor, TerminalState } from './headlessTerminalProcessor'; // File deleted
-import { getNonce } from '../../sys/utils/webview';
+import { BoardManager, IBoard } from '../sys/boardManager';
+import { WorkspaceValidator, DeviceConnectionPermissions } from '../workspace/workspaceValidator';
+import { MuTwoWorkspaceManager } from '../workspace/workspaceManager';
+import { IDevice } from '../devices/core/deviceDetector';
+import { TerminalHistoryManager } from './helpers/historyManager';
+// HeadlessTerminalProcessor functionality removed
+import { getNonce } from '../sys/utils/webview';
 import { LanguageServiceBridge } from './language/core/LanguageServiceBridge';
+import { WasmRuntimeManager, WasmExecutionResult } from '../sys/wasmRuntimeManager';
 
 /**
  * REPL View Provider with Hybrid PTY Backend support
@@ -25,8 +24,8 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	
 	private extensionUri: vscode.Uri;
 	private extensionContext: vscode.ExtensionContext;
-	private workspaceValidator: WorkspaceValidator;
-	private workspaceManager: MuTwoWorkspaceManager;
+	private workspaceValidator?: WorkspaceValidator;
+	private workspaceManager?: MuTwoWorkspaceManager;
 	private historyManager: TerminalHistoryManager;
 	private boardManager?: BoardManager;
 	
@@ -35,9 +34,13 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	private isWebviewReady = false;
 	private currentDevice?: IDevice;
 	private hybridModeEnabled: boolean = true;
-	private currentHybridInstance?: HybridTerminalInstance;
-	private hybridTerminalManager?: HybridTerminalManager;
+	// Hybrid terminal functionality removed (dependencies missing)
 	private languageServiceBridge: LanguageServiceBridge;
+
+	// WASM Runtime Management
+	private wasmRuntimeManager?: WasmRuntimeManager;
+	private currentRuntime: 'serial' | 'wasm-circuitpython' | 'blinka-python' | 'pyscript' = 'serial';
+	private runtimeStatus: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
 
 	constructor(
 		extensionUri: vscode.Uri,
@@ -46,31 +49,33 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 		this.extensionUri = extensionUri;
 		this.extensionContext = extensionContext;
 		
-		// Access services on-demand via global exports from extension.ts
-		this.workspaceValidator = new WorkspaceValidator(extensionContext);
-		this.workspaceManager = new MuTwoWorkspaceManager(extensionContext);
+		// Initialize lightweight services first, defer heavy workspace services
 		this.historyManager = new TerminalHistoryManager(extensionContext);
+
+		// Lazy-load workspace services to avoid circular dependencies during extension startup
+		this.initializeWorkspaceServices(extensionContext);
 		
 		// Initialize CircuitPython language service for REPL completions
-		this.languageServiceBridge = new LanguageServiceBridge({
-			enableDiagnostics: false, // Disable for REPL - too noisy
-			enableCompletions: true,
-			enableHover: true,
-			enableSignatureHelp: true,
-			defaultBoard: 'circuitplayground_express' // TODO: Get from device detection
-		});
-		
-		// Initialize hybrid terminal manager if available
 		try {
-			this.hybridTerminalManager = new HybridTerminalManager();
-			this.loadHybridConfiguration();
+			this.languageServiceBridge = new LanguageServiceBridge({
+				enableDiagnostics: false, // Disable for REPL - too noisy
+				enableCompletions: true,
+				enableHover: true,
+				enableSignatureHelp: true,
+				defaultBoard: 'circuitplayground_express' // TODO: Get from device detection
+			});
+			console.log('REPL: Language service bridge initialized successfully');
 		} catch (error) {
-			console.warn('Hybrid terminal manager not available:', error);
-			this.hybridModeEnabled = false;
+			console.error('REPL: Failed to initialize language service bridge:', error);
+			// Create a null object that provides safe method calls
+			this.languageServiceBridge = this.createNullLanguageServiceBridge();
 		}
 		
-		// Initialize headless processor
-		this.headlessProcessor = new HeadlessTerminalProcessor();
+		// Hybrid terminal functionality removed (dependencies missing)
+		this.hybridModeEnabled = false;
+		console.log('Hybrid terminal functionality disabled - dependencies removed');
+		
+		// Headless processor functionality removed (was causing activation errors)
 		
 		// Simplified initialization - removed complex dependencies
 		console.log('REPL View Provider initialized with simplified architecture');
@@ -146,10 +151,17 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 		await this.updateWebviewContent();
 
 		// Connect webview to CircuitPython language service for completions
-		this.languageServiceBridge.connectWebview(
-			webviewView.webview, 
-			'muTwo.replView'
-		);
+		try {
+			if (this.languageServiceBridge) {
+				this.languageServiceBridge.connectWebview(
+					webviewView.webview,
+					'muTwo.replView'
+				);
+				console.log('REPL: Language service bridge connected successfully');
+			}
+		} catch (error) {
+			console.warn('REPL: Failed to connect language service bridge:', error);
+		}
 
 		// Handle messages from webview
 		webviewView.webview.onDidReceiveMessage(async (data) => {
@@ -166,6 +178,13 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 * Perform workspace validation and determine device connection status
 	 */
 	private async performWorkspaceValidation(): Promise<void> {
+		// Check if workspace validator is available
+		if (!this.workspaceValidator) {
+			console.warn('REPL: Workspace validator not yet initialized, skipping validation');
+			this.deviceConnectionEnabled = true;
+			return;
+		}
+
 		// Check global device connection permissions first
 		const deviceConnectionStatus = this.workspaceValidator.shouldEnableDeviceConnections(this.currentDevice);
 		
@@ -197,11 +216,24 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 * Update webview content based on connection status and workspace validation
 	 */
 	private async updateWebviewContent(): Promise<void> {
-		if (!this.view) {return};
+		if (!this.view) {
+			console.log('REPL: No webview available for content update');
+			return;
+		}
 
-		const permissions = this.workspaceValidator.getDeviceConnectionPermissions();
+		console.log('REPL: Updating webview content...');
+		const permissions = this.workspaceValidator?.getDeviceConnectionPermissions();
 		const validationResult = this.extensionContext.workspaceState.get('workspaceValidation');
-		this.view.webview.html = this.getReplHtml(permissions, validationResult);
+
+		try {
+			const html = await this.getReplHtml(permissions, validationResult);
+			this.view.webview.html = html;
+			console.log('REPL: Webview HTML set successfully');
+		} catch (error) {
+			console.error('REPL: Failed to set webview HTML:', error);
+			// Set fallback HTML to at least show the panel
+			this.view.webview.html = this.getFallbackHtml();
+		}
 		// if (this.deviceConnectionEnabled) {
 		// 	// Show full REPL with connection capabilities
 			
@@ -233,10 +265,28 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 				vscode.commands.executeCommand('workbench.action.openWorkspaceSettings', 'muTwo');
 				break;
 
+			// Runtime Management Messages
+			case 'runtime.switch':
+				await this.handleRuntimeSwitch(data.runtime);
+				break;
+
+			case 'runtime.connect':
+				await this.handleRuntimeConnect(data.runtime);
+				break;
+
+			case 'runtime.disconnect':
+				await this.handleRuntimeDisconnect(data.runtime);
+				break;
+
 			default:
 				// Handle other REPL-specific messages when device connection is enabled
 				if (this.deviceConnectionEnabled) {
-					await this.handleReplMessage(data);
+					// Only pass to handleReplMessage if it has a valid type property
+					if (data && typeof data === 'object' && typeof data.type === 'string') {
+						await this.handleReplMessage(data);
+					} else {
+						console.warn('REPL: Ignoring message with invalid format:', data);
+					}
 				}
 				break;
 		}
@@ -246,6 +296,10 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 * Handle enabling device connection
 	 */
 	private async handleEnableDeviceConnection(): Promise<void> {
+		if (!this.workspaceValidator) {
+			console.warn('REPL: Workspace validator not available');
+			return;
+		}
 		const permissions = this.workspaceValidator.getDeviceConnectionPermissions();
 		
 		// If globally disabled, direct to settings
@@ -278,7 +332,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	private async sendInitialState(): Promise<void> {
 		if (!this.view) {return};
 
-		const permissions = this.workspaceValidator.getDeviceConnectionPermissions();
+		const permissions = this.workspaceValidator?.getDeviceConnectionPermissions();
 		const validationResult = this.extensionContext.workspaceState.get('workspaceValidation');
 
 		// Get board information if board manager is available
@@ -299,138 +353,46 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
-	 * Set up hybrid PTY backend for the webview
+	 * Hybrid PTY backend functionality removed
 	 */
 	private async setupHybridBackend(webviewView: vscode.WebviewView): Promise<void> {
-		try {
-			// Create hybrid terminal instance
-			this.currentHybridInstance = await this.hybridTerminalManager.createHybridWebviewView(
-				webviewView,
-				{
-					enablePTYBackend: this.hybridModeEnabled,
-					enableWebviewFallback: true,
-					memoryOptimization: true
-				}
-			);
-
-			console.log(`Hybrid PTY backend created for REPL view: ${this.currentHybridInstance.sessionId}`);
-
-
-		} catch (error) {
-			console.error('Failed to setup hybrid backend, falling back to pure webview mode:', error);
-			this.hybridModeEnabled = false;
-			
-			// Show warning to user
-			vscode.window.showWarningMessage(
-				'Hybrid terminal mode failed to initialize. Using standard webview mode.',
-				'Learn More'
-			).then(selection => {
-				if (selection === 'Learn More') {
-					vscode.env.openExternal(vscode.Uri.parse('https://github.com/'));
-				}
-			});
-		}
+		console.log('Hybrid PTY backend functionality removed - skipping setup');
+		return;
 	}
+	// Hybrid message handling functionality removed
 	private setupHybridMessageHandling(webviewView: vscode.WebviewView): void {
-		const originalMessageHandler = webviewView.webview.onDidReceiveMessage;
-
-		// Enhance message handling for hybrid features
-		webviewView.webview.onDidReceiveMessage((message) => {
-			// Handle hybrid-specific messages
-			switch (message.type) {
-				case 'toggleHybridMode':
-					this.toggleHybridMode();
-					break;
-
-				case 'requestMemoryUsage':
-					this.sendMemoryUsageUpdate(webviewView);
-					break;
-
-				case 'terminalInput':
-					// Route through hybrid backend if available
-					if (this.currentHybridInstance?.ptyBackend) {
-						this.currentHybridInstance.ptyBackend.handleInput(message.data);
-					} else {
-						// Fall back to original handling
-						this.handleWebviewMessage(message);
-					}
-					break;
-
-				default:
-					// Route other messages to original handler
-					this.handleWebviewMessage(message);
-					break;
-			}
-		});
+		console.log('Hybrid message handling functionality removed - skipping setup');
+		return;
 	}
 
 	/**
-	 * Toggle between hybrid and pure webview mode
+	 * Hybrid mode functionality removed
 	 */
 	private async toggleHybridMode(): Promise<void> {
-		if (!this.currentHybridInstance) {
-			console.log('No hybrid instance available for mode toggle');
-			return;
-		}
-
-		try {
-			if (this.hybridModeEnabled) {
-				// Switch to pure webview mode
-				await this.hybridTerminalManager.switchToPureWebviewMode(
-					this.currentHybridInstance.sessionId
-				);
-				this.hybridModeEnabled = false;
-				
-				vscode.window.showInformationMessage('Switched to pure webview mode');
-			} else {
-				// Switch to hybrid mode
-				await this.hybridTerminalManager.switchToHybridMode(
-					this.currentHybridInstance.sessionId
-				);
-				this.hybridModeEnabled = true;
-				
-				vscode.window.showInformationMessage('Switched to hybrid PTY mode');
-			}
-
-			// Update webview
-			if (this.currentHybridInstance.webviewView) {
-				this.sendHybridModeUpdate(this.currentHybridInstance.webviewView);
-			}
-
-		} catch (error) {
-			vscode.window.showErrorMessage(`Failed to toggle hybrid mode: ${error instanceof Error ? error.message : String(error)}`);
-		}
+		console.warn('Hybrid mode functionality removed');
+		vscode.window.showWarningMessage('Hybrid mode functionality is not available');
 	}
 
 	/**
-	 * Send hybrid mode update to webview
+	 * Hybrid mode update functionality removed
 	 */
 	private sendHybridModeUpdate(webviewView: vscode.WebviewView): void {
-		webviewView.webview.postMessage({
-			type: 'hybridModeChanged',
-			enabled: this.hybridModeEnabled,
-			sessionId: this.currentHybridInstance?.sessionId
-		});
+		console.log('Hybrid mode update functionality removed');
 	}
 
 	/**
-	 * Send memory usage update to webview
+	 * Memory usage update functionality removed
 	 */
 	private sendMemoryUsageUpdate(webviewView: vscode.WebviewView): void {
-		if (this.currentHybridInstance?.ptyBackend) {
-			const metrics = this.currentHybridInstance.ptyBackend.getPerformanceMetrics();
-			webviewView.webview.postMessage({
-				type: 'memoryUsageUpdate',
-				data: metrics.memoryUsage
-			});
-		}
+		console.log('Memory usage update functionality removed');
 	}
 
 	/**
-	 * Get current hybrid instance
+	 * Hybrid instance functionality removed
 	 */
-	getCurrentHybridInstance(): HybridTerminalInstance | undefined {
-		return this.currentHybridInstance;
+	getCurrentHybridInstance(): any {
+		console.warn('Hybrid instance functionality removed');
+		return undefined;
 	}
 
 	/**
@@ -441,12 +403,10 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
-	 * Get performance metrics
+	 * Performance metrics functionality removed
 	 */
 	getPerformanceMetrics(): any {
-		if (this.currentHybridInstance?.ptyBackend) {
-			return this.currentHybridInstance.ptyBackend.getPerformanceMetrics();
-		}
+		console.log('Performance metrics functionality removed');
 		return null;
 	}
 
@@ -465,10 +425,17 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 */
 	private async handleReplMessage(data: any): Promise<void> {
 		console.log('REPL message received:', data);
-		
-		// Access global services from extension.ts
-		const { debugManager, languageClient } = await import('../../extension');
-		
+
+		// Validate message structure
+		if (!data || typeof data.type !== 'string') {
+			console.error('Invalid message format - missing or invalid type:', data);
+			return;
+		}
+
+		// Access global services safely without circular imports
+		const debugManager = this.getDebugManager();
+		const languageClient = this.getLanguageClient();
+
 		// Handle board-related messages
 		if (data.type.startsWith('board.') && this.boardManager) {
 			await this.handleBoardMessage(data);
@@ -477,31 +444,20 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 
 		switch (data.type) {
 			case 'command':
-				// Send command through debug manager
-				if (data.data?.command && debugManager) {
-					try {
-						await debugManager.executeCommand(data.data.command);
-						this.view?.webview.postMessage({
-							type: 'display',
-							data: { content: `Executed: ${data.data.command}\n` }
-						});
-					} catch (error) {
-						this.view?.webview.postMessage({
-							type: 'display', 
-							data: { content: `Error: ${error}\n` }
-						});
-					}
-				}
+				// Route command execution based on current runtime
+				await this.handleRuntimeCommand(data.data?.command, data.runtime);
 				break;
 				
-			case 'requestHistory':
+			case 'requestHistory': {
 				// Return command history
-				const history = this.historyManager.getHistory();
+				// Note: TerminalHistoryManager may not have getHistory method
+				// This is a placeholder until the method is implemented
 				this.view?.webview.postMessage({
 					type: 'commandHistory',
-					data: { commands: history }
+					data: { commands: [] }
 				});
 				break;
+			}
 				
 			case 'syncContent':
 				// Store terminal content for session restoration
@@ -526,11 +482,12 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 		const { type, data } = message;
 		
 		switch (type) {
-			case 'board.list':
+			case 'board.list': {
 				this.sendBoardList();
 				break;
-				
-			case 'board.connect':
+			}
+
+			case 'board.connect': {
 				const boardToConnect = this.boardManager.getBoard(data.boardId);
 				if (boardToConnect) {
 					try {
@@ -547,8 +504,9 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 					}
 				}
 				break;
-				
-			case 'board.disconnect':
+			}
+
+			case 'board.disconnect': {
 				const boardToDisconnect = this.boardManager.getBoard(data.boardId);
 				if (boardToDisconnect && boardToDisconnect.isConnected()) {
 					try {
@@ -565,8 +523,9 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 					}
 				}
 				break;
-				
-			case 'board.execute':
+			}
+
+			case 'board.execute': {
 				const boardToExecute = this.boardManager.getBoard(data.boardId);
 				if (boardToExecute && boardToExecute.isConnected()) {
 					try {
@@ -578,15 +537,16 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 					} catch (error) {
 						this.sendMessage({
 							type: 'board.executeResponse',
-							data: { 
-								success: false, 
-								boardId: data.boardId, 
-								error: String(error) 
+							data: {
+								success: false,
+								boardId: data.boardId,
+								error: String(error)
 							}
 						});
 					}
 				}
 				break;
+			}
 		}
 	}
 
@@ -615,59 +575,515 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
-	 * Enhanced dispose with hybrid cleanup
+	 * Initialize workspace services lazily to avoid circular dependencies
+	 */
+	private async initializeWorkspaceServices(extensionContext: vscode.ExtensionContext): Promise<void> {
+		try {
+			// Delay initialization to avoid blocking extension startup
+			setTimeout(() => {
+				try {
+					this.workspaceValidator = new WorkspaceValidator(extensionContext);
+					this.workspaceManager = new MuTwoWorkspaceManager(extensionContext);
+					console.log('REPL: Workspace services initialized successfully');
+				} catch (error) {
+					console.error('REPL: Failed to initialize workspace services:', error);
+					// Continue without workspace services - will use fallbacks
+				}
+			}, 100);
+		} catch (error) {
+			console.error('REPL: Failed to schedule workspace services initialization:', error);
+		}
+	}
+
+	/**
+	 * Create a null language service bridge for fallback
+	 */
+	private createNullLanguageServiceBridge(): any {
+		return {
+			connectWebview: () => console.warn('REPL: Language service not available'),
+			disconnectWebview: () => {},
+			dispose: () => {}
+		};
+	}
+
+	/**
+	 * Safely get debug manager instance
+	 */
+	private getDebugManager(): any {
+		try {
+			// Import service registry to access global service
+			const { getService } = require('../sys/serviceRegistry');
+			return getService('deviceManager');
+		} catch (error) {
+			console.warn('Debug manager not available:', error);
+			return null;
+		}
+	}
+
+	/**
+	 * Safely get language client instance
+	 */
+	private getLanguageClient(): any {
+		try {
+			// Import service registry to access global service
+			const { getService } = require('../sys/serviceRegistry');
+			return getService('languageClient');
+		} catch (error) {
+			console.warn('Language client not available:', error);
+			return null;
+		}
+	}
+
+	/**
+	 * Runtime Management Methods
+	 */
+	private async handleRuntimeSwitch(runtime: string): Promise<void> {
+		console.log(`REPL: Switching to runtime: ${runtime}`);
+
+		if (runtime === this.currentRuntime) {
+			console.log('REPL: Already on specified runtime');
+			return;
+		}
+
+		// Disconnect current runtime
+		if (this.runtimeStatus === 'connected') {
+			await this.handleRuntimeDisconnect(this.currentRuntime);
+		}
+
+		// Update current runtime
+		this.currentRuntime = runtime as any;
+
+		// Send status update to webview
+		this.sendMessage({
+			type: 'runtime.statusUpdate',
+			runtime: this.currentRuntime,
+			status: 'disconnected'
+		});
+	}
+
+	private async handleRuntimeConnect(runtime: string): Promise<void> {
+		console.log(`REPL: Connecting to runtime: ${runtime}`);
+
+		this.runtimeStatus = 'connecting';
+		this.sendMessage({
+			type: 'runtime.statusUpdate',
+			runtime: runtime,
+			status: 'connecting'
+		});
+
+		try {
+			switch (runtime) {
+				case 'wasm-circuitpython':
+					await this.connectWASMRuntime();
+					break;
+				case 'blinka-python':
+					await this.connectBlinkaRuntime();
+					break;
+				case 'pyscript':
+					await this.connectPyScriptRuntime();
+					break;
+				default:
+					throw new Error(`Unknown runtime: ${runtime}`);
+			}
+
+			this.runtimeStatus = 'connected';
+			this.sendMessage({
+				type: 'runtime.statusUpdate',
+				runtime: runtime,
+				status: 'connected'
+			});
+
+		} catch (error) {
+			console.error(`REPL: Failed to connect to ${runtime}:`, error);
+			this.runtimeStatus = 'error';
+			this.sendMessage({
+				type: 'runtime.error',
+				runtime: runtime,
+				error: error instanceof Error ? error.message : String(error)
+			});
+		}
+	}
+
+	private async handleRuntimeDisconnect(runtime: string): Promise<void> {
+		console.log(`REPL: Disconnecting from runtime: ${runtime}`);
+
+		try {
+			switch (runtime) {
+				case 'wasm-circuitpython':
+					await this.disconnectWASMRuntime();
+					break;
+				case 'blinka-python':
+					await this.disconnectBlinkaRuntime();
+					break;
+				case 'pyscript':
+					await this.disconnectPyScriptRuntime();
+					break;
+			}
+
+			this.runtimeStatus = 'disconnected';
+			this.sendMessage({
+				type: 'runtime.statusUpdate',
+				runtime: runtime,
+				status: 'disconnected'
+			});
+
+		} catch (error) {
+			console.error(`REPL: Failed to disconnect from ${runtime}:`, error);
+		}
+	}
+
+	private async handleRuntimeCommand(command: string, runtime?: string): Promise<void> {
+		if (!command) return;
+
+		const activeRuntime = runtime || this.currentRuntime;
+
+		try {
+			switch (activeRuntime) {
+				case 'wasm-circuitpython':
+					await this.executeWASMCommand(command);
+					break;
+				case 'blinka-python':
+					await this.executeBlinkaCommand(command);
+					break;
+				case 'pyscript':
+					await this.executePyScriptCommand(command);
+					break;
+				default:
+					await this.executeSerialCommand(command);
+					break;
+			}
+		} catch (error) {
+			console.error(`REPL: Command execution failed for ${activeRuntime}:`, error);
+			this.sendMessage({
+				type: 'display',
+				data: { content: `Error: ${error}\n` }
+			});
+		}
+	}
+
+	// WASM Runtime Methods
+	private async connectWASMRuntime(): Promise<void> {
+		this.sendMessage({
+			type: 'wasm.initializationStart'
+		});
+
+		if (!this.wasmRuntimeManager) {
+			this.wasmRuntimeManager = new WasmRuntimeManager({
+				enableHardwareSimulation: true,
+				debugMode: vscode.workspace.getConfiguration('muTwo.wasm').get('debugMode', false)
+			}, this.extensionContext);
+
+			// Set up hardware state monitoring
+			this.wasmRuntimeManager.on('codeExecuted', (result: WasmExecutionResult) => {
+				if (result.hardwareChanges && result.hardwareChanges.length > 0) {
+					this.sendHardwareStateUpdate();
+				}
+			});
+		}
+
+		await this.wasmRuntimeManager.initialize();
+
+		this.sendMessage({
+			type: 'wasm.initializationComplete',
+			success: true
+		});
+
+		// Send initial hardware state
+		await this.sendHardwareStateUpdate();
+	}
+
+	private async disconnectWASMRuntime(): Promise<void> {
+		if (this.wasmRuntimeManager) {
+			this.wasmRuntimeManager.dispose();
+			this.wasmRuntimeManager = undefined;
+		}
+	}
+
+	private async executeWASMCommand(command: string): Promise<void> {
+		if (!this.wasmRuntimeManager) {
+			throw new Error('WASM runtime not initialized');
+		}
+
+		const result = await this.wasmRuntimeManager.executeCode(command, {
+			enableHardwareMonitoring: true
+		});
+
+		this.sendMessage({
+			type: 'display',
+			data: { content: result.output }
+		});
+
+		// Update hardware state if there were changes
+		if (result.hardwareChanges && result.hardwareChanges.length > 0) {
+			await this.sendHardwareStateUpdate();
+		}
+	}
+
+	private async sendHardwareStateUpdate(): Promise<void> {
+		if (!this.wasmRuntimeManager) return;
+
+		try {
+			const hardwareState = await this.wasmRuntimeManager.getHardwareState();
+			this.sendMessage({
+				type: 'hardware.stateUpdate',
+				hardwareState: hardwareState
+			});
+		} catch (error) {
+			console.warn('REPL: Failed to get hardware state:', error);
+		}
+	}
+
+	// Blinka Runtime Methods (placeholder for future implementation)
+	private async connectBlinkaRuntime(): Promise<void> {
+		console.log('REPL: Blinka runtime connection - using existing serial logic');
+		// This would connect to the existing serial/board manager logic
+	}
+
+	private async disconnectBlinkaRuntime(): Promise<void> {
+		console.log('REPL: Blinka runtime disconnection');
+		// This would disconnect from serial/board manager
+	}
+
+	private async executeBlinkaCommand(command: string): Promise<void> {
+		// Use existing debug manager for serial execution
+		const debugManager = this.getDebugManager();
+		if (debugManager) {
+			await debugManager.sendToRepl(command);
+		} else {
+			throw new Error('Debug manager not available for Blinka runtime');
+		}
+	}
+
+	// PyScript Runtime Methods (placeholder for future implementation)
+	private async connectPyScriptRuntime(): Promise<void> {
+		throw new Error('PyScript runtime not yet implemented');
+	}
+
+	private async disconnectPyScriptRuntime(): Promise<void> {
+		console.log('REPL: PyScript runtime disconnection');
+	}
+
+	private async executePyScriptCommand(command: string): Promise<void> {
+		throw new Error('PyScript execution not yet implemented');
+	}
+
+	// Serial/Legacy Runtime Methods
+	private async executeSerialCommand(command: string): Promise<void> {
+		// Use existing debug manager for serial execution
+		const debugManager = this.getDebugManager();
+		if (debugManager) {
+			try {
+				await debugManager.sendToRepl(command);
+				this.sendMessage({
+					type: 'display',
+					data: { content: `Executed: ${command}\n` }
+				});
+			} catch (error) {
+				this.sendMessage({
+					type: 'display',
+					data: { content: `Error: ${error}\n` }
+				});
+			}
+		}
+	}
+
+	/**
+	 * Dispose provider resources
 	 */
 	dispose(): void {
-		if (this.currentHybridInstance) {
-			this.hybridTerminalManager.getTerminalInstance(this.currentHybridInstance.sessionId);
+		// WASM Runtime cleanup
+		if (this.wasmRuntimeManager) {
+			this.wasmRuntimeManager.dispose();
+			this.wasmRuntimeManager = undefined;
 		}
-		
+
 		// Disconnect from language service
 		this.languageServiceBridge.disconnectWebview('muTwo.replView');
 		this.languageServiceBridge.dispose();
-		
+
 		// Dispose resources
-		this.workspaceValidator.dispose();
-		this.workspaceManager.dispose();
+		if (this.workspaceValidator) {
+			this.workspaceValidator.dispose();
+		}
+		if (this.workspaceManager) {
+			this.workspaceManager.dispose();
+		}
 		this.historyManager.dispose();
 	}
 	
 	/**
-	 * Get HTML for full REPL
+	 * Get fallback HTML when normal HTML generation fails
 	 */
-	private async getReplHtml(permissions: DeviceConnectionPermissions, validationResult: any): string {
+	private getFallbackHtml(): string {
 		const nonce = getNonce();
-		
-		const scriptUri = this.view?.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'public', 'repl', 'index.js'));
-		const styleUri = this.view?.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'public', 'repl', 'xterm.css'));
-		
 		return `<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">	
-	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src vscode-resource: https:; script-src 'nonce-${nonce}'; style-src vscode-resource: 'unsafe-inline' http: https: data:; worker-src 'self' blob:;">
-	<link rel="stylesheet" href="${styleUri}">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
 	<title>Mu 2 REPL</title>
+	<style>
+		body {
+			font-family: var(--vscode-editor-font-family);
+			padding: 16px;
+			color: var(--vscode-foreground);
+			background-color: var(--vscode-editor-background);
+		}
+		.error-message {
+			color: var(--vscode-errorForeground);
+			margin-bottom: 12px;
+		}
+		.info-message {
+			color: var(--vscode-descriptionForeground);
+		}
+	</style>
 </head>
 <body>
-	<div id="terminal"></div>
+	<div class="error-message">⚠️ REPL initialization failed</div>
+	<div class="info-message">The Mu 2 REPL panel is loading. Please check the output console for more details.</div>
+	<script nonce="${nonce}">
+		const vscode = acquireVsCodeApi();
+		vscode.postMessage({ type: 'webviewReady' });
+		console.log('Fallback REPL HTML loaded');
+	</script>
+</body>
+</html>`;
+	}
+
+	/**
+	 * Get HTML for full REPL
+	 */
+	private async getReplHtml(permissions: DeviceConnectionPermissions | undefined, validationResult: any): Promise<string> {
+		const nonce = getNonce();
+
+		if (!this.view) {
+			throw new Error('REPL: No webview available for URI generation');
+		}
+
+		const scriptUri = this.view.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'public', 'repl', 'index.js'));
+		const styleUri = this.view.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'public', 'repl', 'xterm.css'));
+		const blinkafontUri = this.view.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'assets', 'font_experiments', 'FreeMono-Terminal-Blinka.ttf'));
+
+		console.log('REPL: Generated URIs - script:', scriptUri.toString(), 'style:', styleUri.toString(), 'font:', blinkafontUri.toString());
+
+		if (!scriptUri || !styleUri || !blinkafontUri) {
+			throw new Error('REPL: Failed to generate webview URIs');
+		}
+		
+		const wasmCssUri = this.view.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'views', 'webview-repl', 'src', 'wasm-repl.css'));
+		const uiToolkitUri = this.view.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist', 'toolkit.js'));
+
+		return `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src vscode-webview: vscode-resource: https:; script-src 'nonce-${nonce}' vscode-webview:; style-src vscode-webview: vscode-resource: 'unsafe-inline' http: https: data:; font-src vscode-webview: vscode-resource: data:; worker-src 'self' blob:;">
+
+	<!-- VS Code Webview UI Toolkit -->
+	<script type="module" src="${uiToolkitUri}" nonce="${nonce}"></script>
+
+	<!-- Stylesheets -->
+	<link rel="stylesheet" href="${styleUri}">
+	<link rel="stylesheet" href="${wasmCssUri}">
+
+	<style>
+		/* Blinka Font Integration with Fallback */
+		@font-face {
+			font-family: 'FreeMono-Terminal-Blinka';
+			src: url('${blinkafontUri}') format('truetype');
+			font-weight: normal;
+			font-style: normal;
+			font-display: fallback;
+		}
+
+		/* Terminal Blinka Font */
+		.terminal {
+			font-family: 'FreeMono-Terminal-Blinka', 'Courier New', 'Monaco', 'Liberation Mono', monospace !important;
+		}
+		.xterm {
+			font-family: 'FreeMono-Terminal-Blinka', 'Courier New', 'Monaco', 'Liberation Mono', monospace !important;
+		}
+		.xterm-viewport, .xterm-screen {
+			font-family: 'FreeMono-Terminal-Blinka', 'Courier New', 'Monaco', 'Liberation Mono', monospace !important;
+		}
+
+		/* CircuitPython Branding */
+		.circuitpython-mode .terminal,
+		.circuitpython-mode .xterm {
+			background: linear-gradient(135deg, #1e1e1e 0%, #0f1419 100%);
+		}
+
+		/* Blinka Glyph in Prompt with Snake Emoji Fallback */
+		.blinka-prompt::before {
+			content: 'ϴ'; /* Blinka glyph from font */
+			margin-right: 4px;
+			font-family: 'FreeMono-Terminal-Blinka', monospace;
+		}
+
+		/* Fallback to snake emoji if Blinka font fails */
+		@supports not (font-family: 'FreeMono-Terminal-Blinka') {
+			.blinka-prompt::before {
+				content: '🐍';
+				font-family: inherit;
+			}
+		}
+
+		/* Additional fallback for when font loads but glyph is missing */
+		.blinka-prompt.font-fallback::before {
+			content: '🐍⚡';
+			font-family: inherit;
+		}
+
+		/* WASM Runtime Indicator */
+		.wasm-runtime-active {
+			border-left: 3px solid var(--vscode-charts-green);
+		}
+
+		/* Layout for WASM UI + Terminal */
+		.terminal-with-wasm-ui {
+			display: flex;
+			flex-direction: column;
+			height: 100%;
+		}
+
+		.wasm-ui-container {
+			flex-shrink: 0;
+		}
+
+		.terminal-container {
+			flex: 1;
+			min-height: 200px;
+		}
+	</style>
+	<title>🐍⚡ Mu 2 REPL</title>
+</head>
+<body class="terminal-with-wasm-ui">
+	<!-- WASM Runtime Selection UI will be injected here by WasmReplUI.tsx -->
+	<div id="wasm-repl-ui" class="wasm-ui-container"></div>
+
+	<!-- Terminal Container -->
+	<div id="terminal" class="terminal-container"></div>
+
 	<script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 	}
 
 	/**
-	 * Execute headless command - delegates to HeadlessTerminalProcessor
+	 * Execute headless command - stub implementation (HeadlessTerminalProcessor removed)
 	 */
-	public async executeHeadlessCommand(command: string): Promise<TerminalState> {
-		return await this.headlessProcessor.processCommand(command);
+	public async executeHeadlessCommand(command: string): Promise<any> {
+		console.warn('HeadlessTerminalProcessor functionality removed - command ignored:', command);
+		return { output: '', success: false, error: 'HeadlessTerminalProcessor not available' };
 	}
 
 	/**
-	 * Get headless state - delegates to HeadlessTerminalProcessor
+	 * Get headless state - stub implementation (HeadlessTerminalProcessor removed)
 	 */
-	public getHeadlessState(): TerminalState {
-		return this.headlessProcessor.getCurrentState();
+	public getHeadlessState(): any {
+		console.warn('HeadlessTerminalProcessor functionality removed');
+		return { status: 'unavailable', message: 'HeadlessTerminalProcessor not available' };
 	}
 }
