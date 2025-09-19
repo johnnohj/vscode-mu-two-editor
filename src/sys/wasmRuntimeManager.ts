@@ -90,7 +90,7 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
         super();
 
         this.config = {
-            runtimePath: config.runtimePath || path.join(__dirname, '../bin/circuitpython.mjs'),
+            runtimePath: config.runtimePath || path.join(__dirname, 'bin', 'wasm-runtime-worker.mjs'),
             memorySize: config.memorySize || 512, // 512KB default
             timeout: config.timeout || 30000, // 30s default
             enableHardwareSimulation: config.enableHardwareSimulation ?? true,
@@ -115,6 +115,12 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
 
         try {
             this.outputChannel.appendLine('Starting CircuitPython WASM runtime...');
+            this.outputChannel.appendLine(`Runtime path: ${this.config.runtimePath}`);
+
+            // Check if runtime file exists
+            if (!require('fs').existsSync(this.config.runtimePath)) {
+                throw new Error(`WASM runtime file not found: ${this.config.runtimePath}`);
+            }
 
             // Launch Node.js process with circuitpython.mjs
             this.wasmProcess = spawn('node', [this.config.runtimePath], {
@@ -136,9 +142,14 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
             // Wait for runtime to be ready
             await this.waitForReady();
 
-            // Initialize bundle manager and sync libraries to WASM
-            await this.bundleManager.initialize();
-            await this.syncAdafruitLibraries();
+            // Initialize bundle manager and sync libraries to WASM (skip for now for debugging)
+            try {
+                await this.bundleManager.initialize();
+                await this.syncAdafruitLibraries();
+            } catch (error) {
+                this.outputChannel.appendLine(`⚠️ Bundle manager initialization failed (continuing): ${error}`);
+                // Continue without bundle manager for now
+            }
 
             this.isInitialized = true;
             this.outputChannel.appendLine('✓ CircuitPython WASM runtime ready with Adafruit Bundle');

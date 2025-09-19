@@ -573,7 +573,7 @@
 	},
 	"scripts": {
 		"vscode:prepublish": "npm run build-all",
-		"build-extension": "vite build --config vite.extension.config.ts && mkdir -p dist/data && cp src/data/requirements.txt dist/data/",
+		"build-extension": "vite build --config vite.extension.config.ts && (if not exist dist\\data mkdir dist\\data) && copy src\\data\\requirements.txt dist\\data\\ && (if not exist dist\\bin mkdir dist\\bin) && copy src\\bin\\*.mjs dist\\bin\\",
 		"build-views": "cd views && npm run build",
 		"build-repl": "cd views && npm run build:repl",
 		"build-editor": "cd views && npm run build:editor",

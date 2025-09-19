@@ -5,6 +5,7 @@ import { SerializeAddon } from '@xterm/addon-serialize';
 import {ClipboardAddon} from '@xterm/addon-clipboard';
 import { CircuitPythonLanguageClient, CompletionItem } from './CircuitPythonLanguageClient';
 import { initializeWasmReplUI } from './WasmReplUI';
+import './wasm-repl.css';
 
 declare global {
 	interface Window {
@@ -13,8 +14,26 @@ declare global {
 	}
 }
 
-// Get VS Code API
-const vscode = typeof window !== 'undefined' && window.acquireVsCodeApi ? window.acquireVsCodeApi() : null;
+// Get VS Code API - ensure single instance
+const vscode = (() => {
+	if (typeof window !== 'undefined') {
+		// Check if already acquired
+		if ((window as any).vscode) {
+			return (window as any).vscode;
+		}
+
+		// Acquire and store globally
+		try {
+			const api = window.acquireVsCodeApi();
+			(window as any).vscode = api;
+			return api;
+		} catch (error) {
+			console.warn('Failed to acquire VS Code API:', error);
+			return null;
+		}
+	}
+	return null;
+})();
 
 const _el = document.getElementsByTagName('html')[0];
 const vscStyle = _el.style;
@@ -167,8 +186,20 @@ class CommandTerminal {
 		this.terminal.loadAddon(this.serializeAddon);
 
 		const container = document.getElementById('terminal');
-		this.terminal.open(container!);
+		if (!container) {
+			console.error('Terminal container not found! Creating fallback...');
+			// Create fallback container
+			const fallbackContainer = document.createElement('div');
+			fallbackContainer.id = 'terminal';
+			document.body.appendChild(fallbackContainer);
+			this.terminal.open(fallbackContainer);
+		} else {
+			console.log('Terminal container found, opening terminal...');
+			this.terminal.open(container);
+		}
+
 		this.fitAddon.fit();
+		console.log('Terminal opened and fitted');
 
 		// Handle terminal input - capture complete lines instead of individual keystrokes
 		this.terminal.onData((data) => {
@@ -211,7 +242,7 @@ class CommandTerminal {
 				if (message.data.content) {
 					this.writeOutput(message.data.content);
 				}
-				this.showPrompt();
+				// Don't call showPrompt() here - the output should already include the next prompt
 				// Sync terminal content after display update
 				setTimeout(() => this.syncTerminalContent(), 50);
 				break;
@@ -269,15 +300,14 @@ class CommandTerminal {
 
 			case 'wasm.initializationStart':
 				this.state.wasmInitializing = true;
-				this.writeOutput('\r\n🔧 Initializing WASM CircuitPython runtime...\r\n');
+				console.log('\r\n🔧 Initializing WASM CircuitPython runtime...\r\n');
 				break;
 
 			case 'wasm.initializationComplete':
 				this.state.wasmInitializing = false;
 				this.state.runtimeStatus = message.success ? 'connected' : 'error';
 				if (message.success) {
-					this.writeOutput('✅ WASM CircuitPython runtime ready!\r\n');
-					this.writeCircuitPythonWelcome();
+					console.log('✅ WASM CircuitPython runtime ready!\r\n');
 				} else {
 					this.writeOutput('❌ WASM initialization failed\r\n');
 				}
@@ -400,14 +430,16 @@ class CommandTerminal {
 				this.state.currentInput = '';
 				// Show prompt and position cursor properly
 				const prompt = this.state.connected ? '>>> ' : 'mu2> ';
-				this.terminal.write(prompt);
+				const colorizedPrompt = `\x1b[38;2;210;117;55m${prompt}\x1b[0m`;
+				this.terminal.write(colorizedPrompt);
 			} else {
 				// Show command from history
 				const command = this.state.commandHistory[this.state.commandHistory.length - 1 - newIndex];
 				this.state.currentInput = command;
 				// Show prompt and command, cursor will be positioned after the command
 				const prompt = this.state.connected ? '>>> ' : 'mu2> ';
-				this.terminal.write(prompt + command);
+				const colorizedPrompt = `\x1b[38;2;210;117;55m${prompt}\x1b[0m`;
+				this.terminal.write(colorizedPrompt + command);
 			}
 		}
 	}
@@ -421,10 +453,15 @@ class CommandTerminal {
 
 	writeOutput(content: string) {
 		if (!this.terminal) return;
-		
+
 		// Replace \n with \r\n for proper terminal display
 		const normalizedContent = content.replace(/\n/g, '\r\n');
-		this.terminal.write(normalizedContent);
+
+		// Colorize backend output using terminal's orange color
+		// Use ANSI 38;2;R;G;B for RGB color matching terminal theme
+		const colorizedContent = `\x1b[38;2;210;117;55m${normalizedContent}\x1b[0m`;
+
+		this.terminal.write(colorizedContent);
 	}
 
 	private insertBlankLinesAtTop(lineCount: number) {
@@ -447,8 +484,11 @@ class CommandTerminal {
 
 		const prompt = this.getPromptForCurrentRuntime();
 
+		// Colorize prompt using terminal's orange color to match backend output
+		const colorizedPrompt = `\x1b[38;2;210;117;55m${prompt}\x1b[0m`;
+
 		// Write newline and prompt, cursor will naturally position after prompt
-		this.terminal.write('\r\n' + prompt);
+		this.terminal.write('\r\n' + colorizedPrompt);
 
 		// Add padding below the prompt to create buffer zone
 		this.addPaddingBelowPrompt();
@@ -456,19 +496,19 @@ class CommandTerminal {
 
 	private getPromptForCurrentRuntime(): string {
 		// Add Blinka glyph to CircuitPython prompts with fallback
-		const blinkaGlyph = this.detectBlinkaFont() ? 'ϴ' : '🐍';
+		const blinkaGlyph = this.detectBlinkaFont() ? '\uE000' : '🐍';
 
 		switch (this.state.currentRuntime) {
 			case 'wasm-circuitpython':
 				return this.state.runtimeStatus === 'connected'
-					? `${blinkaGlyph}>>> `
-					: `${blinkaGlyph}wasm> `;
+					? `>>> `
+					: `wasm> `;
 			case 'pyscript':
 				return this.state.runtimeStatus === 'connected' ? '>>> ' : 'pyscript> ';
 			case 'blinka-python':
 				return this.state.connected
-					? `${blinkaGlyph}>>> `
-					: `${blinkaGlyph}blinka> `;
+					? `>>> `
+					: `blinka> `;
 			default:
 				return 'mu2> ';
 		}
@@ -479,27 +519,16 @@ class CommandTerminal {
 		// This can be expanded to update the terminal prompt dynamically
 	}
 
-	private writeCircuitPythonWelcome(): void {
+	private writeCircuitPythonHelp(): void {
 		if (!this.terminal) return;
 
 		// Try to detect if Blinka font loaded successfully
 		const hasBlinkaFont = this.detectBlinkaFont();
 
-		const blinka = hasBlinkaFont ? `
-    ████████████  ██████     ███████  ███    ██  ██   ██   █████
-    ██        ██  ██    ██   ██       ████   ██  ██  ██   ██   ██
-    ████████████  ██████     █████    ██ ██  ██  █████    ███████
-    ██        ██  ██    ██   ██       ██  ██ ██  ██  ██   ██   ██
-    ████████████  ██████     ███████  ██   ████  ██   ██  ██   ██
-` : `
-    🐍⚡ B L I N K A ⚡🐍
-    ════════════════════
-`;
 
-		const logo = hasBlinkaFont ? 'ϴ' : '🐍⚡';
+		const logo = hasBlinkaFont ? '\uE000' : '🐍⚡';
 
 		const welcomeMessage = `
-${blinka}
     ${logo} CircuitPython ${this.getCircuitPythonVersion()} on WASM Virtual Hardware ${logo}
 
 ╭─────────────────── MU 2 REPL with WASM Backend ───────────────────╮
@@ -536,11 +565,11 @@ Ready for CircuitPython magic! ✨
 
 			// Test with Blinka font
 			ctx.font = '12px FreeMono-Terminal-Blinka, monospace';
-			const blinkaWidth = ctx.measureText('ϴ').width;
+			const blinkaWidth = ctx.measureText('\uE000').width;
 
 			// Test with fallback font
 			ctx.font = '12px monospace';
-			const fallbackWidth = ctx.measureText('ϴ').width;
+			const fallbackWidth = ctx.measureText('\uE000').width;
 
 			// If widths differ significantly, Blinka font is probably loaded
 			return Math.abs(blinkaWidth - fallbackWidth) > 1;
@@ -552,7 +581,7 @@ Ready for CircuitPython magic! ✨
 
 	private getCircuitPythonVersion(): string {
 		// Could be dynamically fetched from WASM runtime
-		return '9.1.0';
+		return 'wasm';
 	}
 
 	private addPaddingBelowPrompt() {
@@ -664,6 +693,10 @@ Ready for CircuitPython magic! ✨
 		if (this.fitAddon) {
 			this.fitAddon.fit();
 		}
+	}
+
+	public getFitAddon() {
+		return this.fitAddon;
 	}
 
 	// Tab completion methods
@@ -782,20 +815,24 @@ Ready for CircuitPython magic! ✨
 }
 
 // Initialize terminal and WASM UI when DOM is ready
-if (document.readyState === 'loading') {
-	document.addEventListener('DOMContentLoaded', () => {
-		// Initialize WASM UI first
-		initializeWasmReplUI();
+function initializeComponents() {
+	console.log('Initializing webview components...');
 
-		// Then initialize terminal
-		window.terminal = new CommandTerminal();
-	});
-} else {
-	// Initialize WASM UI first
+	// Initialize WASM UI first (this sets up the VS Code API)
 	initializeWasmReplUI();
 
-	// Then initialize terminal
-	window.terminal = new CommandTerminal();
+	// Wait a bit, then initialize terminal
+	setTimeout(() => {
+		console.log('Initializing terminal...');
+		window.terminal = new CommandTerminal();
+		console.log('Terminal initialized:', !!window.terminal);
+	}, 100);
+}
+
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', initializeComponents);
+} else {
+	initializeComponents();
 }
 
 // Export for module systems
