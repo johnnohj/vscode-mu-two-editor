@@ -20,16 +20,20 @@
 		"Other"
 	],
 	"extensionDependencies": [
-		"ms-python.python",
-		"ms-vscode.wasm-wasi-core"
+		"ms-python.python"
 	],
 	"optionalExtensionDependencies": [
 		"ms-vscode.vscode-serial-monitor"
 	],
 	"activationEvents": [
-		"onFileSystem:ctpy",
-		"workspaceContains:.vscode/mu2 && workspaceContains:ctpy-device:/",
-		"onCustomEditor:viewType:muTwo.editor.editView"
+		"onLanguage:python",
+		"onCustomEditor:muTwo.editor.editView",
+		"onCommand:muTwo.workspace.create",
+		"onCommand:muTwo.workspace.open",
+		"onCommand:muTwo.editor.openEditor",
+		"workspaceContains:**/*.py",
+		"workspaceContains:**/code.py",
+		"workspaceContains:**/main.py"
 	],
 	"main": "./dist/extension.js",
 	"contributes": {
@@ -38,7 +42,7 @@
 				{
 					"id": "replContainer",
 					"title": "REPL",
-					"icon": "/Mu2NoCirc.svg"
+					"icon": "assets/Mu2NoCirc-Red.svg"
 				}
 			]
 		},
@@ -48,43 +52,22 @@
 					"type": "webview",
 					"id": "muTwo.replView",
 					"name": "REPL",
-					"icon": "/Mu2NoCirc.svg"
+					"icon": "assets/Mu2NoCirc-Red.svg"
 				}
 			]
 		},
-		"customEditors": [
-			{
-				"viewType": "muTwo.editor.editView",
-				"displayName": "Mu 2 Editor",
-				"icon": "assets/Mu2NoCirc-Red.svg",
-				"selector": [
-					{
-						"filenamePatterns": [
-							"code.py",
-							"main.py"
-						]
-					}
-				],
-				"priority": "default",
-				"when": [
-					"extension.muTwo.isActive",
-					"muTwo.Workspace.isOpen",
-					"resourceScheme == ctpy || resourcePath =~ /ctpy-device/current/*.py"
-				]
-			}
-		],
 		"menus": {
 			"editor/title": [
 				{
 					"command": "muTwo.editor.showPanel",
-					"when": "muTwo.editor.navIcon == true && muTwo.editor.panelCollapsed == true",
+					"when": "muTwo.editor.editView && muTwo.editor.panelCollapsed == true",
 					"icon": "$(layout-panel-off)",
 					"title": "Show Panel",
 					"group": "navigation"
 				},
 				{
 					"command": "muTwo.editor.hidePanel",
-					"when": "muTwo.editor.navIcon == true && muTwo.editor.panelCollapsed != true",
+					"when": "muTwo.editor.editView && muTwo.editor.panelCollapsed != true",
 					"icon": "$(layout-panel)",
 					"title": "Hide Panel",
 					"group": "navigation"
@@ -108,15 +91,15 @@
 				},
 				{
 					"command": "muTwo.workspace.refresh",
-					"when": "muTwo.fullyActivated && muTwo.Workspace.isOpen"
+					"when": "muTwo.Workspace.isOpen"
 				},
 				{
 					"command": "muTwo.workspace.manage",
-					"when": "muTwo.fullyActivated && muTwo.Workspace.isOpen"
+					"when": "muTwo.Workspace.isOpen"
 				},
 				{
 					"command": "muTwo.workspace.restoreToInitial",
-					"when": "muTwo.fullyActivated && muTwo.Workspace.isOpen"
+					"when": "muTwo.Workspace.isOpen"
 				},
 				{
 					"command": "muTwo.editor.showPanel",
@@ -125,14 +108,6 @@
 				{
 					"command": "muTwo.editor.hidePanel",
 					"when": "muTwo.editor.navIcon == true && muTwo.editor.panelCollapsed != true"
-				},
-				{
-					"command": "muTwo.serial.openInSerialMonitor",
-					"when": "muTwo.fullyActivated && extension.mu-two.hasActiveDevice"
-				},
-				{
-					"command": "muTwo.serial.checkSerialMonitorConflict",
-					"when": "muTwo.fullyActivated"
 				}
 			],
 			"view/title": []
@@ -244,6 +219,11 @@
 				"title": "Show Mu 2 Welcome"
 			},
 			{
+				"command": "muTwo.showView",
+				"category": "Mu 2",
+				"title": "Show REPL Panel"
+			},
+			{
 				"command": "muTwo.workspace.refresh",
 				"category": "Mu 2",
 				"title": "Refresh Connected Boards"
@@ -288,7 +268,12 @@
 			{
 				"command": "muTwo.editor.openEditor",
 				"category": "Mu 2",
-				"title": "Open Mu 2 Editor"
+				"title": "Open Python File with Split View"
+			},
+			{
+				"command": "muTwo.debug.testWebviewPanel",
+				"category": "Mu 2",
+				"title": "Test Webview Panel Creation"
 			},
 			{
 				"command": "muTwo.debug.startSession",
@@ -601,19 +586,36 @@
 		"dev": "npm run build-all",
 		"lint": "eslint",
 		"compile": "npm run build-extension",
-		"watch": "npm run dev-extension"
+		"watch": "npm run dev-extension",
+		"test": "npm run test:compile && vscode-test",
+		"test:compile": "tsc -p test/tsconfig.json",
+		"test:watch": "npm run test:compile -- --watch",
+		"test:unit": "vscode-test --testGlob='**/test/unit/**/*.test.js'",
+		"test:integration": "npm run test:compile && vscode-test --testGlob='**/test/integration/**/*.test.js'",
+		"test:all": "npm run test:compile && vscode-test",
+		"test:coverage": "nyc npm run test:unit"
 	},
 	"devDependencies": {
+		"@electron/rebuild": "^4.0.1",
 		"@eslint/js": "^9.13.0",
 		"@stylistic/eslint-plugin": "^2.9.0",
 		"@types/body-parser": "^1.19.6",
 		"@types/cors": "^2.8.19",
 		"@types/express": "^5.0.3",
+		"@types/mocha": "^10.0.9",
 		"@types/node": "^22.15.18",
+		"@types/sinon": "^17.0.3",
 		"@types/vscode": "^1.73.0",
 		"@types/vscode-webview": "^1.57.5",
+		"@types/w3c-web-usb": "^1.0.12",
+		"@vscode/test-cli": "^0.0.10",
+		"@vscode/test-electron": "^2.4.1",
 		"concurrently": "^8.2.2",
+		"electron-rebuild": "^3.2.9",
 		"eslint": "^9.13.0",
+		"mocha": "^10.8.0",
+		"nyc": "^17.1.0",
+		"sinon": "^19.0.2",
 		"typescript": "^5.8.2",
 		"typescript-eslint": "^8.26.0",
 		"vite": "^6.3.5",
@@ -626,7 +628,6 @@
 		"@serialport/parser-readline": "^13.0.0",
 		"@vscode/debugadapter": "^1.68.0",
 		"@vscode/debugprotocol": "^1.68.0",
-		"@vscode/wasm-wasi": "^1.0.1",
 		"@vscode/webview-ui-toolkit": "^1.4.0",
 		"@xterm/addon-clipboard": "^0.1.0",
 		"@xterm/addon-fit": "^0.10.0",
@@ -640,7 +641,6 @@
 		"micro-repl": "^0.8.2",
 		"reflect-metadata": "^0.2.2",
 		"serialport": "^13.0.0",
-		"usb": "^2.16.0",
 		"vscode-jsonrpc": "^8.2.1",
 		"vscode-languageclient": "^9.0.1",
 		"vscode-languageserver": "^9.0.1",

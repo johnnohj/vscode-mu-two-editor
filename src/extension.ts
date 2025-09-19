@@ -24,8 +24,9 @@
 */
 // Import necessary modules
 import * as vscode from 'vscode';
-import { CircuitPythonDeviceDetector, IDevice } from './devices/deviceDetector';
+import { MuDeviceDetector, IDevice } from './devices/core/deviceDetector';
 import { ExtensionStateManager } from './sys/extensionStateManager';
+import { registerService } from './sys/serviceRegistry';
 import { PythonEnvManager } from './sys/pythonEnvManager';
 // TODO: Perhaps we can perform a quick 'isVisible' check on the replView panel to see if 
 // we need to initialize the Provider right away, or if we can wait. -john
@@ -34,14 +35,14 @@ import { ReplViewProvider } from './providers/replViewProvider';
 // Core services - always loaded
 import { BoardManager, IBoard } from './sys/boardManager';
 import { CtpyFileSystemProvider } from './sys/fileSystemProvider';
-import { DeviceManager } from './devices/deviceManager';
-import { MuTwoLanguageClient } from './interface/client';
+import { DeviceManager } from './devices/core/deviceManager';
+import { MuTwoLanguageClient } from './devices/core/client';
 import { MuTwoWorkspaceManager } from './workspace/workspaceManager';
 
 // On-demand services - loaded when needed
 import { EditorPanelProvider } from './providers/editorPanelProvider';
 import { MuTwoWorkspace } from './workspace/workspace';
-import { ProjectManager } from './workspace/core/projectManager';
+import { ProjectManager } from './workspace/projectManager';
 import { FileSaveTwiceHandler } from './workspace/filesystem/saveTwiceHandler';
 
 /* 
@@ -53,13 +54,14 @@ import { FileSaveTwiceHandler } from './workspace/filesystem/saveTwiceHandler';
 // Global state
 let stateManager: ExtensionStateManager;
 let boardManager: BoardManager;
+let statusBarItem: vscode.StatusBarItem;
 
 // Core services (always available)
 export let deviceManager: DeviceManager;
 export let languageClient: MuTwoLanguageClient;
 export let webviewViewProvider: ReplViewProvider;
 export let editorPanelProvider: EditorPanelProvider;
-export let deviceDetector: CircuitPythonDeviceDetector;
+export let deviceDetector: MuDeviceDetector;
 
 // On-demand services (loaded as needed)
 export let pythonEnvManager: PythonEnvManager | null = null;
@@ -75,16 +77,16 @@ export async function activate(context: vscode.ExtensionContext) {
     console.log('Mu 2 Extension: Starting activation...');
     
     try {
-        // Step 1: Initialize core infrastructure (always succeeds)
+        // Step 1: Initialize core infrastructure
         initializeCore(context);
         
-        // Step 2: Initialize essential services (always succeeds)
+        // Step 2: Initialize essential services
         await initializeEssentialServices(context);
         
-        // Step 3: Register UI components (always succeeds)
+        // Step 3: Register UI components
         registerUIComponents(context);
         
-        // Step 4: Register commands (always succeeds)
+        // Step 4: Register commands
         registerCommands(context);
         
         // Step 5: Initialize BoardManager as primary device system
@@ -92,7 +94,12 @@ export async function activate(context: vscode.ExtensionContext) {
         
         // Step 6: Set up lazy loading for optional services
         setupLazyLoading(context);
-        
+
+        // Step 7: Set context variables for custom editor activation
+        await vscode.commands.executeCommand('setContext', 'extension.muTwo.isActive', true);
+        await vscode.commands.executeCommand('setContext', 'muTwo.Workspace.isOpen', true);
+        await vscode.commands.executeCommand('setContext', 'muTwo.fullyActivated', true);
+
         console.log('Mu 2 Extension: Activation completed successfully');
         
     } catch (error) {
@@ -169,24 +176,49 @@ async function initializeEssentialServices(context: vscode.ExtensionContext): Pr
         pythonEnvManager = null;
     }
     
-    // Initialize device manager (always succeeds)
-    deviceManager = new DeviceManager(context);
-    stateManager.setComponent('deviceManager', deviceManager);
-    
-    // Initialize LSP client (always succeeds, starts in background)
-    languageClient = new MuTwoLanguageClient(context);
-    stateManager.setComponent('languageClient', languageClient);
-    
-    // Initialize device detector
-    deviceDetector = new CircuitPythonDeviceDetector();
-    stateManager.setComponent('deviceDetector', deviceDetector);
+    // Initialize device manager with error handling
+    try {
+        deviceManager = new DeviceManager(context);
+        stateManager.setComponent('deviceManager', deviceManager);
+        registerService('deviceManager', deviceManager);
+        console.log('Device manager initialized successfully');
+    } catch (error) {
+        console.error('Failed to initialize device manager:', error);
+        // Continue with null device manager - providers will handle gracefully
+        deviceManager = null as any;
+    }
+
+    // Initialize LSP client with error handling
+    try {
+        languageClient = new MuTwoLanguageClient(context);
+        stateManager.setComponent('languageClient', languageClient);
+        registerService('languageClient', languageClient);
+        console.log('Language client initialized successfully');
+    } catch (error) {
+        console.error('Failed to initialize language client:', error);
+        // Continue with null language client - providers will handle gracefully
+        languageClient = null as any;
+    }
+
+    // Initialize device detector with error handling
+    try {
+        deviceDetector = new MuDeviceDetector();
+        stateManager.setComponent('deviceDetector', deviceDetector);
+        console.log('Device detector initialized successfully');
+    } catch (error) {
+        console.error('Failed to initialize device detector:', error);
+        // Continue with null device detector - board manager will handle gracefully
+        deviceDetector = null as any;
+    }
     
     // Start LSP in background - don't wait or fail on errors
-    languageClient.start().then(() => {
-        console.log('Language server started successfully');
-    }).catch(error => {
-        console.log('Language server startup failed (continuing without LSP):', error);
-    });
+    if (languageClient) {
+        languageClient.start().then(() => {
+            console.log('Language server started successfully');
+        }).catch(error => {
+            console.log('Language server startup failed (continuing without LSP):', error);
+        });
+    }
     
     console.log('Essential services initialized');
 }
@@ -198,9 +230,15 @@ async function initializeBoardManager(context: vscode.ExtensionContext): Promise
     console.log('Initializing BoardManager as primary device system...');
     
     try {
+        // Check if required dependencies are available
+        if (!deviceManager || !languageClient || !deviceDetector) {
+            console.warn('Some required services for BoardManager not available, skipping BoardManager initialization');
+            return;
+        }
+
         // Get file system provider
         fileSystemProvider = await getFileSystemProvider(context);
-        
+
         // Create BoardManager as the primary device management system
         boardManager = new BoardManager(
             context,
@@ -209,25 +247,26 @@ async function initializeBoardManager(context: vscode.ExtensionContext): Promise
             fileSystemProvider,
             deviceDetector
         );
-        
+
         stateManager.setComponent('boardManager', boardManager);
-        
+
         // Set up board event handlers
         setupBoardEventHandlers();
-        
+
         // Connect board manager to view provider if it exists
         if (webviewViewProvider) {
             webviewViewProvider.setBoardManager(boardManager);
         }
-        
+
         // Initialize board detection
         await boardManager.initialize();
-        
+
         console.log('BoardManager initialized successfully');
-        
+
     } catch (error) {
         console.error('BoardManager initialization failed:', error);
-        throw error;
+        // Don't throw - continue with limited functionality
+        boardManager = null as any;
     }
 }
 
@@ -252,13 +291,27 @@ function setupBoardEventHandlers(): void {
 }
 
 function updateStatusBar(): void {
+    if (!statusBarItem) {
+        // Create persistent status bar item for device connection status
+        statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+        statusBarItem.command = 'muTwo.boards.list';
+        statusBarItem.tooltip = 'Click to view CircuitPython boards';
+        statusBarItem.show();
+    }
+
     const connectedBoards = boardManager.getConnectedBoards();
     const totalBoards = boardManager.getAllBoards();
-    
-    vscode.window.setStatusBarMessage(
-        `CircuitPython: ${connectedBoards.length}/${totalBoards.length} boards connected`,
-        5000
-    );
+
+    if (totalBoards.length === 0) {
+        statusBarItem.text = `$(plug) No CircuitPython boards`;
+        statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+    } else if (connectedBoards.length === 0) {
+        statusBarItem.text = `$(circle-outline) ${totalBoards.length} board(s) available`;
+        statusBarItem.backgroundColor = undefined;
+    } else {
+        statusBarItem.text = `$(check-all) ${connectedBoards.length}/${totalBoards.length} connected`;
+        statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+    }
 }
 
 function notifyWebviewsOfBoardChange(): void {
@@ -309,6 +362,12 @@ function registerUIComponents(context: vscode.ExtensionContext): void {
     // Create editor panel provider
     editorPanelProvider = new EditorPanelProvider(context);
     stateManager.setComponent('editorPanelProvider', editorPanelProvider);
+
+    // EditorPanelProvider now handles simple split functionality
+    console.log('Editor panel provider created for split view functionality');
+
+    // Register CircuitPython language features for standard Python editors
+    registerCircuitPythonLanguageFeatures(context);
     
     console.log('UI components registered');
 }
@@ -402,15 +461,19 @@ function registerCommands(context: vscode.ExtensionContext): void {
 	 // Messages are sent directly to the webview component for handling.
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.editor.showPanel', () => {
-            editorPanelProvider.sendMessage({ type: 'showPanel' });
-		  })
-	 );
-	 	 
-	 context.subscriptions.push(
-		  vscode.commands.registerCommand('muTwo.editor.hidePanel', () => {
-				editorPanelProvider.sendMessage({ type: 'hidePanel' });
-		  })
-	 );
+            if (editorPanelProvider) {
+                editorPanelProvider.sendMessage({ type: 'showPanel' });
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.editor.hidePanel', () => {
+            if (editorPanelProvider) {
+                editorPanelProvider.sendMessage({ type: 'hidePanel' });
+            }
+        })
+    );
 
     // Project Management Commands
     context.subscriptions.push(
@@ -443,8 +506,882 @@ function registerCommands(context: vscode.ExtensionContext): void {
             await setupPythonEnvironmentCommand(context);
         })
     );
-    
+
+    // Editor commands - now opens standard text editor with workspace-aware REPL panel
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.editor.openEditor', async (uri?: vscode.Uri) => {
+            console.log('muTwo.editor.openEditor command called with URI:', uri?.toString());
+
+            let document: vscode.TextDocument;
+
+            if (uri) {
+                // Open the specified file in standard text editor
+                document = await vscode.workspace.openTextDocument(uri);
+            } else {
+                // Check if there's an active Python editor
+                const activeEditor = vscode.window.activeTextEditor;
+                if (activeEditor && activeEditor.document.languageId === 'python') {
+                    document = activeEditor.document;
+                } else {
+                    // Create a new Python file
+                    document = await vscode.workspace.openTextDocument({
+                        language: 'python',
+                        content: '# CircuitPython code\nimport time\n\nwhile True:\n    print("Hello, CircuitPython!")\n    time.sleep(1)\n'
+                    });
+                }
+            }
+
+            // Show the document in standard text editor
+            const textEditor = await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
+
+            // Split the editor vertically for workspace view
+            await editorPanelProvider.createOrShowPanel();
+
+            console.log('Opened Python file in standard editor with vertical split');
+        })
+    );
+
+    // Test command for webview panel positioning
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.debug.testWebviewPanel', async () => {
+            const testOptions = [
+                'Pure Split Editor Down (No Panel)',
+                'Split + Create Webview in Split',
+                'Create Panel Only (No Split Commands)',
+                'Create Panel + Split After',
+                'Split After Panel Creation',
+                'Basic Below Split',
+                'ViewColumn.Beside',
+                'Split Editor Down Command',
+                'Move to Below Group Command',
+                'ViewColumn.Two'
+            ];
+
+            const selected = await vscode.window.showQuickPick(testOptions, {
+                placeHolder: 'Select positioning test to run'
+            });
+
+            if (!selected) return;
+
+            const activeEditor = vscode.window.activeTextEditor;
+            if (!activeEditor) {
+                vscode.window.showErrorMessage('Please open a file first to test panel positioning');
+                return;
+            }
+
+            console.log(`=== Testing: ${selected} ===`);
+
+            try {
+                let panel: vscode.WebviewPanel;
+
+                switch (selected) {
+                    case 'Pure Split Editor Down (No Panel)':
+                        await testPureSplitDown();
+                        return; // No panel created
+                    case 'Split + Create Webview in Split':
+                        panel = await testSplitAndCreateInSplit(context);
+                        break;
+                    case 'Create Panel Only (No Split Commands)':
+                        panel = await testCreatePanelOnly(context);
+                        break;
+                    case 'Create Panel + Split After':
+                        panel = await testCreatePanelThenSplit(context);
+                        break;
+                    case 'Split After Panel Creation':
+                        panel = await testSplitAfterPanelCreation(context);
+                        break;
+                    case 'Basic Below Split':
+                        panel = await testBasicBelowSplit(context);
+                        break;
+                    case 'ViewColumn.Beside':
+                        panel = await testViewColumnBeside(context);
+                        break;
+                    case 'Split Editor Down Command':
+                        panel = await testSplitEditorDown(context);
+                        break;
+                    case 'Move to Below Group Command':
+                        panel = await testMoveToBelow(context);
+                        break;
+                    case 'ViewColumn.Two':
+                        panel = await testViewColumnTwo(context);
+                        break;
+                    default:
+                        throw new Error('Unknown test option');
+                }
+
+                vscode.window.showInformationMessage(`${selected} test completed`);
+            } catch (error) {
+                console.error(`Test failed:`, error);
+                vscode.window.showErrorMessage(`${selected} test failed: ${error}`);
+            }
+        })
+    );
+
     console.log('Commands registered');
+}
+
+/**
+ * Register CircuitPython language features for standard Python editors
+ */
+function registerCircuitPythonLanguageFeatures(context: vscode.ExtensionContext): void {
+    console.log('Registering CircuitPython language features for Python files...');
+
+    const pythonSelector: vscode.DocumentSelector = { language: 'python' };
+
+    // Get existing services for integration
+    const languageServiceBridge = editorPanelProvider.getLanguageServiceBridge();
+    const moduleRegistry = getModuleRegistry();
+    const boardDatabase = getBoardDatabase();
+
+    // 1. Completion Provider - CircuitPython-specific autocomplete
+    const completionProvider = vscode.languages.registerCompletionItemProvider(
+        pythonSelector,
+        new CircuitPythonCompletionProvider(languageServiceBridge, moduleRegistry, boardDatabase),
+        '.', // Trigger on dot
+        ' '  // Trigger on space
+    );
+    context.subscriptions.push(completionProvider);
+
+    // 2. Hover Provider - Show CircuitPython-specific documentation
+    const hoverProvider = vscode.languages.registerHoverProvider(
+        pythonSelector,
+        new CircuitPythonHoverProvider(languageServiceBridge, moduleRegistry)
+    );
+    context.subscriptions.push(hoverProvider);
+
+    // 3. Signature Help Provider - Function parameter hints
+    const signatureProvider = vscode.languages.registerSignatureHelpProvider(
+        pythonSelector,
+        new CircuitPythonSignatureProvider(languageServiceBridge),
+        '(', ','
+    );
+    context.subscriptions.push(signatureProvider);
+
+    // 4. Definition Provider - Go to definition for CircuitPython modules
+    const definitionProvider = vscode.languages.registerDefinitionProvider(
+        pythonSelector,
+        new CircuitPythonDefinitionProvider(moduleRegistry)
+    );
+    context.subscriptions.push(definitionProvider);
+
+    // 5. Diagnostic Provider - CircuitPython-specific linting
+    const diagnosticCollection = vscode.languages.createDiagnosticCollection('circuitpython');
+    context.subscriptions.push(diagnosticCollection);
+
+    // Update diagnostics when documents change
+    const diagnosticProvider = new CircuitPythonDiagnosticProvider(diagnosticCollection, moduleRegistry, boardDatabase);
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument(e => {
+            if (e.document.languageId === 'python') {
+                diagnosticProvider.updateDiagnostics(e.document);
+            }
+        })
+    );
+
+    // Update diagnostics when documents are opened
+    context.subscriptions.push(
+        vscode.workspace.onDidOpenTextDocument(document => {
+            if (document.languageId === 'python') {
+                diagnosticProvider.updateDiagnostics(document);
+            }
+        })
+    );
+
+    console.log('CircuitPython language features registered successfully');
+}
+
+/**
+ * Get the ModuleRegistry instance
+ */
+function getModuleRegistry(): any {
+    try {
+        const { moduleRegistry } = require('./providers/language/core/ModuleRegistry');
+        return moduleRegistry;
+    } catch (error) {
+        console.warn('ModuleRegistry not available:', error);
+        return null;
+    }
+}
+
+/**
+ * Get the Board database
+ */
+function getBoardDatabase(): any {
+    try {
+        // Access board database through the ModuleRegistry adapter
+        const { moduleRegistry } = require('./providers/language/core/ModuleRegistry');
+        return moduleRegistry; // ModuleRegistry includes board data
+    } catch (error) {
+        console.warn('Board database not available:', error);
+        return null;
+    }
+}
+
+// Language Feature Provider Classes
+class CircuitPythonCompletionProvider implements vscode.CompletionItemProvider {
+    constructor(
+        private languageServiceBridge: any,
+        private moduleRegistry: any,
+        private boardDatabase: any
+    ) {}
+
+    async provideCompletionItems(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        token: vscode.CancellationToken,
+        context: vscode.CompletionContext
+    ): Promise<vscode.CompletionItem[]> {
+        const items: vscode.CompletionItem[] = [];
+
+        try {
+            // Get dynamic modules from ModuleRegistry
+            if (this.moduleRegistry) {
+                const availableModules = this.moduleRegistry.getAvailableModules();
+                availableModules.forEach((module: any) => {
+                    const item = new vscode.CompletionItem(module.name, vscode.CompletionItemKind.Module);
+                    item.detail = `CircuitPython module: ${module.name}`;
+                    item.documentation = new vscode.MarkdownString(module.description || `Import the \`${module.name}\` CircuitPython module`);
+                    if (module.version) {
+                        item.detail += ` (v${module.version})`;
+                    }
+                    items.push(item);
+                });
+            }
+
+            // Get board-specific completions from board database
+            if (this.boardDatabase && document.getText().includes('import board')) {
+                const currentBoard = this.getCurrentBoard();
+                if (currentBoard) {
+                    const boardPins = this.getBoardPins(currentBoard);
+                    boardPins.forEach((pin: any) => {
+                        const item = new vscode.CompletionItem(`board.${pin.name}`, vscode.CompletionItemKind.Property);
+                        item.detail = `Board pin: ${pin.name}`;
+                        item.documentation = new vscode.MarkdownString(
+                            `Access pin \`${pin.name}\` on the ${currentBoard.name} board\n\n` +
+                            `**Type:** ${pin.type}\n` +
+                            `**Capabilities:** ${pin.capabilities?.join(', ') || 'Digital I/O'}`
+                        );
+                        items.push(item);
+                    });
+                }
+            }
+
+            // Use LanguageServiceBridge for context-aware completions
+            if (this.languageServiceBridge) {
+                const line = document.lineAt(position).text;
+                const currentWord = document.getText(document.getWordRangeAtPosition(position));
+
+                const bridgeCompletions = await this.languageServiceBridge.getCompletions(
+                    document.getText(),
+                    position,
+                    currentWord
+                );
+
+                if (bridgeCompletions) {
+                    bridgeCompletions.forEach((completion: any) => {
+                        const item = new vscode.CompletionItem(completion.label, this.mapCompletionKind(completion.kind));
+                        item.detail = completion.detail;
+                        item.documentation = completion.documentation;
+                        item.insertText = completion.insertText;
+                        items.push(item);
+                    });
+                }
+            }
+
+        } catch (error) {
+            console.warn('Error in CircuitPython completion provider:', error);
+        }
+
+        return items;
+    }
+
+    private getCurrentBoard(): any {
+        if (this.boardDatabase && this.boardDatabase.getConnectedBoards) {
+            const connected = this.boardDatabase.getConnectedBoards();
+            return connected.length > 0 ? connected[0] : null;
+        }
+        return null;
+    }
+
+    private getBoardPins(board: any): any[] {
+        // Extract pins from board definition
+        if (board.pins) {
+            return board.pins;
+        }
+
+        // Fallback to common pins if board doesn't have specific pin definitions
+        return [
+            { name: 'LED', type: 'digital', capabilities: ['output'] },
+            { name: 'A0', type: 'analog', capabilities: ['input', 'output'] },
+            { name: 'A1', type: 'analog', capabilities: ['input', 'output'] },
+            { name: 'D0', type: 'digital', capabilities: ['input', 'output'] },
+            { name: 'D1', type: 'digital', capabilities: ['input', 'output'] },
+            { name: 'SDA', type: 'i2c', capabilities: ['i2c'] },
+            { name: 'SCL', type: 'i2c', capabilities: ['i2c'] }
+        ];
+    }
+
+    private mapCompletionKind(kind: string): vscode.CompletionItemKind {
+        switch (kind) {
+            case 'module': return vscode.CompletionItemKind.Module;
+            case 'class': return vscode.CompletionItemKind.Class;
+            case 'function': return vscode.CompletionItemKind.Function;
+            case 'variable': return vscode.CompletionItemKind.Variable;
+            case 'property': return vscode.CompletionItemKind.Property;
+            default: return vscode.CompletionItemKind.Text;
+        }
+    }
+}
+
+class CircuitPythonHoverProvider implements vscode.HoverProvider {
+    constructor(
+        private languageServiceBridge: any,
+        private moduleRegistry: any
+    ) {}
+
+    async provideHover(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        token: vscode.CancellationToken
+    ): Promise<vscode.Hover | undefined> {
+        const range = document.getWordRangeAtPosition(position);
+        if (!range) return undefined;
+
+        const word = document.getText(range);
+
+        try {
+            // First try to get hover info from LanguageServiceBridge
+            if (this.languageServiceBridge) {
+                const hoverInfo = await this.languageServiceBridge.getHoverInfo(
+                    document.getText(),
+                    position,
+                    word
+                );
+
+                if (hoverInfo) {
+                    const markdownString = new vscode.MarkdownString();
+                    if (hoverInfo.signature) {
+                        markdownString.appendCodeblock(hoverInfo.signature, 'python');
+                    }
+                    if (hoverInfo.documentation) {
+                        markdownString.appendMarkdown(hoverInfo.documentation);
+                    }
+                    return new vscode.Hover(markdownString, range);
+                }
+            }
+
+            // Fallback to ModuleRegistry for module information
+            if (this.moduleRegistry) {
+                const moduleInfo = this.moduleRegistry.getModuleInfo(word);
+                if (moduleInfo) {
+                    const markdownString = new vscode.MarkdownString();
+                    markdownString.appendCodeblock(`# ${word}`, 'python');
+                    markdownString.appendMarkdown(moduleInfo.description || `CircuitPython module: ${word}`);
+
+                    if (moduleInfo.version) {
+                        markdownString.appendMarkdown(`\n\n**Version:** ${moduleInfo.version}`);
+                    }
+
+                    if (moduleInfo.url) {
+                        markdownString.appendMarkdown(`\n\n[Documentation](${moduleInfo.url})`);
+                    }
+
+                    return new vscode.Hover(markdownString, range);
+                }
+            }
+
+            // Final fallback to static CircuitPython info
+            const circuitPythonInfo: { [key: string]: string } = {
+                'board': 'CircuitPython board module - provides access to board pins and hardware',
+                'digitalio': 'CircuitPython digital I/O module - control digital pins',
+                'analogio': 'CircuitPython analog I/O module - read analog sensors and control analog outputs',
+                'LED': 'Built-in LED pin on the CircuitPython board',
+                'neopixel': 'CircuitPython NeoPixel module - control addressable RGB LEDs',
+                'busio': 'CircuitPython bus I/O module - I2C, SPI, and UART communication',
+                'microcontroller': 'CircuitPython microcontroller module - low-level hardware access'
+            };
+
+            if (circuitPythonInfo[word]) {
+                const markdownString = new vscode.MarkdownString();
+                markdownString.appendCodeblock(`# ${word}`, 'python');
+                markdownString.appendMarkdown(circuitPythonInfo[word]);
+                return new vscode.Hover(markdownString, range);
+            }
+
+        } catch (error) {
+            console.warn('Error in CircuitPython hover provider:', error);
+        }
+
+        return undefined;
+    }
+}
+
+class CircuitPythonSignatureProvider implements vscode.SignatureHelpProvider {
+    constructor(private languageServiceBridge: any) {}
+
+    async provideSignatureHelp(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        token: vscode.CancellationToken,
+        context: vscode.SignatureHelpContext
+    ): Promise<vscode.SignatureHelp | undefined> {
+        try {
+            if (this.languageServiceBridge) {
+                const signatureInfo = await this.languageServiceBridge.getSignatureHelp(
+                    document.getText(),
+                    position
+                );
+
+                if (signatureInfo && signatureInfo.signatures) {
+                    const signatureHelp = new vscode.SignatureHelp();
+
+                    signatureHelp.signatures = signatureInfo.signatures.map((sig: any) => {
+                        const signature = new vscode.SignatureInformation(sig.label, sig.documentation);
+
+                        if (sig.parameters) {
+                            signature.parameters = sig.parameters.map((param: any) =>
+                                new vscode.ParameterInformation(param.label, param.documentation)
+                            );
+                        }
+
+                        return signature;
+                    });
+
+                    signatureHelp.activeSignature = signatureInfo.activeSignature || 0;
+                    signatureHelp.activeParameter = signatureInfo.activeParameter || 0;
+
+                    return signatureHelp;
+                }
+            }
+        } catch (error) {
+            console.warn('Error in CircuitPython signature provider:', error);
+        }
+
+        return undefined;
+    }
+}
+
+class CircuitPythonDefinitionProvider implements vscode.DefinitionProvider {
+    constructor(private moduleRegistry: any) {}
+
+    async provideDefinition(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        token: vscode.CancellationToken
+    ): Promise<vscode.Definition | undefined> {
+        const range = document.getWordRangeAtPosition(position);
+        if (!range) return undefined;
+
+        const word = document.getText(range);
+
+        try {
+            if (this.moduleRegistry) {
+                const moduleInfo = this.moduleRegistry.getModuleInfo(word);
+
+                if (moduleInfo) {
+                    // If module has a local stub file, go to it
+                    if (moduleInfo.stubPath) {
+                        const stubUri = vscode.Uri.file(moduleInfo.stubPath);
+                        return new vscode.Location(stubUri, new vscode.Position(0, 0));
+                    }
+
+                    // If module has online documentation, could open that
+                    if (moduleInfo.documentationUrl) {
+                        // For now, log the URL - could implement opening in browser
+                        console.log(`Documentation for ${word}: ${moduleInfo.documentationUrl}`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('Error in CircuitPython definition provider:', error);
+        }
+
+        return undefined;
+    }
+}
+
+class CircuitPythonDiagnosticProvider {
+    constructor(
+        private diagnosticCollection: vscode.DiagnosticCollection,
+        private moduleRegistry: any,
+        private boardDatabase: any
+    ) {}
+
+    updateDiagnostics(document: vscode.TextDocument): void {
+        const diagnostics: vscode.Diagnostic[] = [];
+        const text = document.getText();
+        const lines = text.split('\n');
+
+        // Check for common CircuitPython mistakes
+        this.checkCommonMistakes(lines, diagnostics);
+
+        // Check for unavailable modules
+        this.checkUnavailableModules(lines, diagnostics);
+
+        // Check for board-specific issues
+        this.checkBoardSpecificIssues(lines, diagnostics);
+
+        this.diagnosticCollection.set(document.uri, diagnostics);
+    }
+
+    private checkCommonMistakes(lines: string[], diagnostics: vscode.Diagnostic[]): void {
+        const commonMistakes = [
+            {
+                pattern: /import RPi\.GPIO/,
+                message: 'RPi.GPIO is not available in CircuitPython. Use digitalio instead.',
+                suggestion: 'import digitalio'
+            },
+            {
+                pattern: /import wiringpi/,
+                message: 'wiringpi is not available in CircuitPython. Use digitalio instead.',
+                suggestion: 'import digitalio'
+            },
+            {
+                pattern: /import pygame/,
+                message: 'pygame is not available on microcontrollers. Consider using displayio for graphics.',
+                suggestion: 'import displayio'
+            }
+        ];
+
+        lines.forEach((line, lineIndex) => {
+            commonMistakes.forEach(mistake => {
+                if (mistake.pattern.test(line)) {
+                    const range = new vscode.Range(lineIndex, 0, lineIndex, line.length);
+                    const diagnostic = new vscode.Diagnostic(
+                        range,
+                        mistake.message,
+                        vscode.DiagnosticSeverity.Error
+                    );
+                    diagnostic.source = 'CircuitPython';
+                    diagnostic.code = 'incompatible-import';
+                    diagnostics.push(diagnostic);
+                }
+            });
+        });
+    }
+
+    private checkUnavailableModules(lines: string[], diagnostics: vscode.Diagnostic[]): void {
+        if (!this.moduleRegistry) return;
+
+        const importPattern = /^(?:from\s+(\S+)\s+import|import\s+(\S+))/;
+
+        lines.forEach((line, lineIndex) => {
+            const match = line.match(importPattern);
+            if (match) {
+                const moduleName = match[1] || match[2];
+
+                if (moduleName && !this.moduleRegistry.isModuleAvailable(moduleName)) {
+                    // Check if it's a known CircuitPython module that might need installation
+                    const suggestions = this.moduleRegistry.getSimilarModules(moduleName);
+
+                    const range = new vscode.Range(lineIndex, 0, lineIndex, line.length);
+                    let message = `Module '${moduleName}' is not available in the current CircuitPython environment.`;
+
+                    if (suggestions.length > 0) {
+                        message += ` Did you mean: ${suggestions.join(', ')}?`;
+                    }
+
+                    const diagnostic = new vscode.Diagnostic(
+                        range,
+                        message,
+                        vscode.DiagnosticSeverity.Warning
+                    );
+                    diagnostic.source = 'CircuitPython';
+                    diagnostic.code = 'module-not-found';
+                    diagnostics.push(diagnostic);
+                }
+            }
+        });
+    }
+
+    private checkBoardSpecificIssues(lines: string[], diagnostics: vscode.Diagnostic[]): void {
+        if (!this.boardDatabase) return;
+
+        const currentBoard = this.getCurrentBoard();
+        if (!currentBoard) return;
+
+        // Check for board pin usage
+        const boardPinPattern = /board\.(\w+)/g;
+
+        lines.forEach((line, lineIndex) => {
+            let match;
+            while ((match = boardPinPattern.exec(line)) !== null) {
+                const pinName = match[1];
+
+                if (!this.isPinAvailableOnBoard(pinName, currentBoard)) {
+                    const startPos = match.index;
+                    const endPos = startPos + match[0].length;
+                    const range = new vscode.Range(lineIndex, startPos, lineIndex, endPos);
+
+                    const diagnostic = new vscode.Diagnostic(
+                        range,
+                        `Pin '${pinName}' is not available on ${currentBoard.name}. Available pins: ${this.getAvailablePins(currentBoard).join(', ')}`,
+                        vscode.DiagnosticSeverity.Error
+                    );
+                    diagnostic.source = 'CircuitPython';
+                    diagnostic.code = 'invalid-pin';
+                    diagnostics.push(diagnostic);
+                }
+            }
+        });
+    }
+
+    private getCurrentBoard(): any {
+        if (this.boardDatabase && this.boardDatabase.getConnectedBoards) {
+            const connected = this.boardDatabase.getConnectedBoards();
+            return connected.length > 0 ? connected[0] : null;
+        }
+        return null;
+    }
+
+    private isPinAvailableOnBoard(pinName: string, board: any): boolean {
+        if (board.pins) {
+            return board.pins.some((pin: any) => pin.name === pinName);
+        }
+        // Fallback - assume common pins are available
+        const commonPins = ['LED', 'A0', 'A1', 'A2', 'D0', 'D1', 'D2', 'SDA', 'SCL'];
+        return commonPins.includes(pinName);
+    }
+
+    private getAvailablePins(board: any): string[] {
+        if (board.pins) {
+            return board.pins.map((pin: any) => pin.name);
+        }
+        return ['LED', 'A0', 'A1', 'A2', 'D0', 'D1', 'D2', 'SDA', 'SCL'];
+    }
+}
+
+// Test functions for webview panel positioning
+
+async function testPureSplitDown(): Promise<void> {
+    console.log('Testing pure split editor down (no panels)');
+
+    // Just split the editor to see what happens
+    await vscode.commands.executeCommand('workbench.action.splitEditorDown');
+
+    // Let's also try some other split-related commands to see what's available
+    console.log('Available after split:');
+
+    // Wait a bit then try to get info about the split
+    setTimeout(async () => {
+        const activeEditor = vscode.window.activeTextEditor;
+        console.log('Active editor after split:', {
+            viewColumn: activeEditor?.viewColumn,
+            document: activeEditor?.document.fileName,
+            visibleRanges: activeEditor?.visibleRanges
+        });
+
+        // Try to see if there are multiple visible editors now
+        const visibleEditors = vscode.window.visibleTextEditors;
+        console.log('Visible editors count:', visibleEditors.length);
+        visibleEditors.forEach((editor, i) => {
+            console.log(`Editor ${i}:`, {
+                column: editor.viewColumn,
+                fileName: editor.document.fileName
+            });
+        });
+
+        // Try some other split-related commands to see what's available
+        const splitCommands = [
+            'workbench.action.splitEditorRight',
+            'workbench.action.splitEditorLeft',
+            'workbench.action.splitEditorUp',
+            'workbench.action.joinTwoGroups',
+            'workbench.action.toggleEditorGroupLayout',
+            'workbench.action.editorLayoutTwoColumns',
+            'workbench.action.editorLayoutTwoRows',
+            'workbench.action.editorLayoutThreeColumns'
+        ];
+
+        console.log('Available split commands to test:');
+        splitCommands.forEach(cmd => console.log(` - ${cmd}`));
+    }, 500);
+}
+
+async function testSplitAndCreateInSplit(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
+    console.log('Testing split then create webview in the split area');
+
+    // First split the editor
+    await vscode.commands.executeCommand('workbench.action.splitEditorDown');
+
+    // Wait a moment for the split to take effect
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // Now create a webview panel - it should go in the active (split) area
+    const panel = vscode.window.createWebviewPanel(
+        'muTwo.test.splittarget',
+        'Test: Split Target',
+        vscode.ViewColumn.Active, // Should target the active split
+        { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    panel.webview.html = `<h1>Split Target Test</h1><p>Created after splitting - should appear in split area</p>`;
+
+    console.log('Panel created in split area');
+    return panel;
+}
+
+async function testCreatePanelOnly(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
+    console.log('Testing: Create panel only, no split commands at all');
+
+    const activeColumn = vscode.window.activeTextEditor?.viewColumn || vscode.ViewColumn.One;
+
+    const panel = vscode.window.createWebviewPanel(
+        'muTwo.test.panelonly',
+        'Test: Panel Only',
+        activeColumn,
+        { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    panel.webview.html = `<h1>Panel Only Test</h1><p>No split commands executed - should just create panel</p>`;
+
+    console.log('Panel created without any split commands');
+    return panel;
+}
+
+async function testCreatePanelThenSplit(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
+    console.log('Testing: Create panel first, then split after panel exists');
+
+    const activeColumn = vscode.window.activeTextEditor?.viewColumn || vscode.ViewColumn.One;
+
+    // Create panel first
+    const panel = vscode.window.createWebviewPanel(
+        'muTwo.test.panelfirst',
+        'Test: Panel Then Split',
+        activeColumn,
+        { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    panel.webview.html = `<h1>Panel Then Split Test</h1><p>Panel created first, split command will run after</p>`;
+
+    // Wait a moment, then split
+    setTimeout(async () => {
+        console.log('Running split command after panel creation...');
+        try {
+            await vscode.commands.executeCommand('workbench.action.splitEditorDown');
+            console.log('Split command executed after panel creation');
+        } catch (e) {
+            console.log('Split after panel creation failed:', e);
+        }
+    }, 300);
+
+    return panel;
+}
+
+async function testSplitAfterPanelCreation(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
+    console.log('Testing: Create panel, wait, then split specifically');
+
+    const activeColumn = vscode.window.activeTextEditor?.viewColumn || vscode.ViewColumn.One;
+
+    const panel = vscode.window.createWebviewPanel(
+        'muTwo.test.splitafter',
+        'Test: Split After Creation',
+        activeColumn,
+        { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    panel.webview.html = `<h1>Split After Creation Test</h1><p>Panel created, about to split...</p>`;
+
+    // Wait longer, then split
+    setTimeout(async () => {
+        console.log('About to split after panel is fully created...');
+        try {
+            await vscode.commands.executeCommand('workbench.action.splitEditorDown');
+            console.log('Split executed successfully after panel creation');
+        } catch (e) {
+            console.log('Split after panel failed:', e);
+        }
+    }, 1000);
+
+    return panel;
+}
+
+async function testBasicBelowSplit(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
+    const activeColumn = vscode.window.activeTextEditor?.viewColumn || vscode.ViewColumn.One;
+
+    const panel = vscode.window.createWebviewPanel(
+        'muTwo.test.basic',
+        'Test: Basic Below',
+        activeColumn,
+        { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    panel.webview.html = `<h1>Basic Below Split Test</h1><p>Created in same column as active editor</p>`;
+
+    // Try to split down after creation
+    setTimeout(async () => {
+        try {
+            await vscode.commands.executeCommand('workbench.action.splitEditorDown');
+        } catch (e) {
+            console.log('splitEditorDown failed:', e);
+        }
+    }, 100);
+
+    return panel;
+}
+
+async function testViewColumnBeside(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
+    const panel = vscode.window.createWebviewPanel(
+        'muTwo.test.beside',
+        'Test: ViewColumn.Beside',
+        vscode.ViewColumn.Beside,
+        { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    panel.webview.html = `<h1>ViewColumn.Beside Test</h1><p>Should open beside active editor</p>`;
+    return panel;
+}
+
+async function testSplitEditorDown(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
+    // First split the editor down
+    await vscode.commands.executeCommand('workbench.action.splitEditorDown');
+
+    // Then create panel in the new split
+    const panel = vscode.window.createWebviewPanel(
+        'muTwo.test.splitdown',
+        'Test: Split Down First',
+        vscode.ViewColumn.Active,
+        { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    panel.webview.html = `<h1>Split Editor Down Test</h1><p>Split first, then create panel</p>`;
+    return panel;
+}
+
+async function testMoveToBelow(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
+    const activeColumn = vscode.window.activeTextEditor?.viewColumn || vscode.ViewColumn.One;
+
+    const panel = vscode.window.createWebviewPanel(
+        'muTwo.test.movebelow',
+        'Test: Move to Below',
+        activeColumn,
+        { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    panel.webview.html = `<h1>Move to Below Test</h1><p>Create then move below</p>`;
+
+    // Try to move to below group
+    setTimeout(async () => {
+        try {
+            await vscode.commands.executeCommand('workbench.action.moveEditorToBelowGroup');
+        } catch (e) {
+            console.log('moveEditorToBelowGroup failed:', e);
+        }
+    }, 100);
+
+    return panel;
+}
+
+async function testViewColumnTwo(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
+    const panel = vscode.window.createWebviewPanel(
+        'muTwo.test.columntwo',
+        'Test: ViewColumn.Two',
+        vscode.ViewColumn.Two,
+        { enableScripts: true, retainContextWhenHidden: true }
+    );
+
+    panel.webview.html = `<h1>ViewColumn.Two Test</h1><p>Should open in second column</p>`;
+    return panel;
 }
 
 /**
@@ -535,7 +1472,7 @@ async function configureFileSystemProviderScope(context: vscode.ExtensionContext
             workspaceUtil = await getWorkspaceManager(context);
         }
         const registry = await workspaceUtil.workspaceUtil.getWorkspaceRegistry();
-        for (const workspace of registry.workspaces) {
+        for (const workspace of Object.values(registry.workspaces)) {
             if (workspace.workspace_path) {
                 provider.addAllowedPath(workspace.workspace_path);
                 console.log(`Added registered workspace path: ${workspace.workspace_path}`);
@@ -596,6 +1533,16 @@ export function getSaveTwiceHandler(context: vscode.ExtensionContext): FileSaveT
 }
 
 /**
+ * Get existing EditorPanelProvider instance (created during UI component registration)
+ */
+export async function getEditorPanelProvider(context: vscode.ExtensionContext): Promise<EditorPanelProvider> {
+    if (!editorPanelProvider) {
+        throw new Error('EditorPanelProvider not initialized. This should be created during UI component registration.');
+    }
+    return editorPanelProvider;
+}
+
+/**
  * Create required directories (non-blocking)
  */
 async function createDirectories(context: vscode.ExtensionContext): Promise<void> {
@@ -620,12 +1567,17 @@ async function createDirectories(context: vscode.ExtensionContext): Promise<void
  */
 export function deactivate(): void {
     console.log('Mu 2 Extension: Deactivating...');
-    
+
+    // Dispose of status bar item
+    if (statusBarItem) {
+        statusBarItem.dispose();
+    }
+
     // State manager handles all component disposal
     if (stateManager) {
         stateManager.dispose();
     }
-    
+
     console.log('Mu 2 Extension: Deactivated');
 }
 
