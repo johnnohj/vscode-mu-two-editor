@@ -426,7 +426,13 @@ export class EditorPanelProvider {
 		return {
 			connectWebview: () => console.warn('Language service not available'),
 			disconnectWebview: () => {},
-			dispose: () => {}
+			dispose: () => {},
+			getLanguageService: () => ({
+				getCompletions: async () => [],
+				getHover: async () => null,
+				getSignatureHelp: async () => null,
+				getDiagnostics: async () => []
+			})
 		};
 	}
 

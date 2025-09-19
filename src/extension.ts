@@ -771,10 +771,9 @@ class CircuitPythonCompletionProvider implements vscode.CompletionItemProvider {
                 const line = document.lineAt(position).text;
                 const currentWord = document.getText(document.getWordRangeAtPosition(position));
 
-                const bridgeCompletions = await this.languageServiceBridge.getCompletions(
+                const bridgeCompletions = await this.languageServiceBridge.getLanguageService().getCompletions(
                     document.getText(),
-                    position,
-                    currentWord
+                    { line: position.line, character: position.character }
                 );
 
                 if (bridgeCompletions) {
@@ -789,7 +788,7 @@ class CircuitPythonCompletionProvider implements vscode.CompletionItemProvider {
             }
 
         } catch (error) {
-            console.warn('Error in CircuitPython completion provider:', error);
+            console.error('Error in CircuitPython completion provider:', error);
         }
 
         return items;
@@ -852,10 +851,9 @@ class CircuitPythonHoverProvider implements vscode.HoverProvider {
         try {
             // First try to get hover info from LanguageServiceBridge
             if (this.languageServiceBridge) {
-                const hoverInfo = await this.languageServiceBridge.getHoverInfo(
+                const hoverInfo = await this.languageServiceBridge.getLanguageService().getHover(
                     document.getText(),
-                    position,
-                    word
+                    { line: position.line, character: position.character }
                 );
 
                 if (hoverInfo) {
@@ -909,7 +907,7 @@ class CircuitPythonHoverProvider implements vscode.HoverProvider {
             }
 
         } catch (error) {
-            console.warn('Error in CircuitPython hover provider:', error);
+            console.error('Error in CircuitPython hover provider:', error);
         }
 
         return undefined;
@@ -927,9 +925,9 @@ class CircuitPythonSignatureProvider implements vscode.SignatureHelpProvider {
     ): Promise<vscode.SignatureHelp | undefined> {
         try {
             if (this.languageServiceBridge) {
-                const signatureInfo = await this.languageServiceBridge.getSignatureHelp(
+                const signatureInfo = await this.languageServiceBridge.getLanguageService().getSignatureHelp(
                     document.getText(),
-                    position
+                    { line: position.line, character: position.character }
                 );
 
                 if (signatureInfo && signatureInfo.signatures) {
@@ -954,7 +952,7 @@ class CircuitPythonSignatureProvider implements vscode.SignatureHelpProvider {
                 }
             }
         } catch (error) {
-            console.warn('Error in CircuitPython signature provider:', error);
+            console.error('Error in CircuitPython signature provider:', error);
         }
 
         return undefined;
