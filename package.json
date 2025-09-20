@@ -60,16 +60,16 @@
 			"editor/title": [
 				{
 					"command": "muTwo.editor.showPanel",
-					"when": "muTwo.editor.editView && muTwo.editor.panelCollapsed == true",
+					"when": "resourceExtname == .py && muTwo.connectedRepl.panelCollapsed != false",
 					"icon": "$(layout-panel-off)",
-					"title": "Show Panel",
+					"title": "Show Connected REPL",
 					"group": "navigation"
 				},
 				{
 					"command": "muTwo.editor.hidePanel",
-					"when": "muTwo.editor.editView && muTwo.editor.panelCollapsed != true",
+					"when": "resourceExtname == .py && muTwo.connectedRepl.panelCollapsed == false",
 					"icon": "$(layout-panel)",
-					"title": "Hide Panel",
+					"title": "Hide Connected REPL",
 					"group": "navigation"
 				}
 			],

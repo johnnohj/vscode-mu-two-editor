@@ -41,6 +41,7 @@ import { MuTwoWorkspaceManager } from './workspace/workspaceManager';
 
 // On-demand services - loaded when needed
 import { EditorPanelProvider } from './providers/editorPanelProvider';
+import { EditorReplPanelProvider } from './providers/webviewPanelProvider';
 import { MuTwoWorkspace } from './workspace/workspace';
 import { ProjectManager } from './workspace/projectManager';
 import { FileSaveTwiceHandler } from './workspace/filesystem/saveTwiceHandler';
@@ -61,6 +62,7 @@ export let deviceManager: DeviceManager;
 export let languageClient: MuTwoLanguageClient;
 export let webviewViewProvider: ReplViewProvider;
 export let editorPanelProvider: EditorPanelProvider;
+export let webviewPanelProvider: EditorReplPanelProvider;
 export let deviceDetector: MuDeviceDetector;
 
 // On-demand services (loaded as needed)
@@ -366,6 +368,11 @@ function registerUIComponents(context: vscode.ExtensionContext): void {
     // EditorPanelProvider now handles simple split functionality
     console.log('Editor panel provider created for split view functionality');
 
+    // Create webview panel provider for connected REPLs
+    webviewPanelProvider = new EditorReplPanelProvider(context);
+    stateManager.setComponent('webviewPanelProvider', webviewPanelProvider);
+    console.log('Webview panel provider created for connected REPL functionality');
+
     // Register CircuitPython language features for standard Python editors
     registerCircuitPythonLanguageFeatures(context);
     
@@ -460,17 +467,23 @@ function registerCommands(context: vscode.ExtensionContext): void {
 	 // title bar/navigation area. 
 	 // Messages are sent directly to the webview component for handling.
     context.subscriptions.push(
-        vscode.commands.registerCommand('muTwo.editor.showPanel', () => {
-            if (editorPanelProvider) {
-                editorPanelProvider.sendMessage({ type: 'showPanel' });
+        vscode.commands.registerCommand('muTwo.editor.showPanel', async () => {
+            const activeEditor = vscode.window.activeTextEditor;
+
+            if (activeEditor && activeEditor.document.languageId === 'python' && webviewPanelProvider) {
+                // Show existing panel or create new one for Python files
+                await webviewPanelProvider.createOrShowPanel(activeEditor);
             }
         })
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.editor.hidePanel', () => {
-            if (editorPanelProvider) {
-                editorPanelProvider.sendMessage({ type: 'hidePanel' });
+            const activeEditor = vscode.window.activeTextEditor;
+
+            if (activeEditor && activeEditor.document.languageId === 'python' && webviewPanelProvider) {
+                // Hide panel for Python files
+                webviewPanelProvider.hidePanel(activeEditor);
             }
         })
     );
@@ -540,6 +553,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
             console.log('Opened Python file in standard editor with vertical split');
         })
     );
+
 
     // Test command for webview panel positioning
     context.subscriptions.push(
