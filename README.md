@@ -92,6 +92,3 @@ This is a production-ready CircuitPython development environment. The codebase f
 
 Licensed under the MIT License - see individual file headers for details.
 
----
-
-*🤖 Enhanced with modern VS Code extension architecture and Phase 1 improvements*
