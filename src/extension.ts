@@ -488,6 +488,58 @@ function registerCommands(context: vscode.ExtensionContext): void {
         })
     );
 
+    // Show/Hide Connected REPL Header commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.editor.showHeader', () => {
+            console.log('muTwo.editor.showHeader command triggered');
+
+            if (webviewPanelProvider) {
+                const activePanels = webviewPanelProvider.getActivePanels();
+                if (activePanels.length > 0) {
+                    console.log('Calling showHeader on first active panel');
+                    // Show header for the first active REPL panel
+                    activePanels[0].showHeader();
+                } else {
+                    console.log('No active REPL panels found');
+                }
+            } else {
+                console.log('webviewPanelProvider not available');
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.editor.hideHeader', () => {
+            console.log('muTwo.editor.hideHeader command triggered');
+
+            if (webviewPanelProvider) {
+                const activePanels = webviewPanelProvider.getActivePanels();
+                if (activePanels.length > 0) {
+                    console.log('Calling hideHeader on first active panel');
+                    // Hide header for the first active REPL panel
+                    activePanels[0].hideHeader();
+                } else {
+                    console.log('No active REPL panels found');
+                }
+            } else {
+                console.log('webviewPanelProvider not available');
+            }
+        })
+    );
+
+    // Debug command to check context values
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.debug.checkContext', () => {
+            const activeEditor = vscode.window.activeTextEditor;
+            console.log('=== CONTEXT DEBUG ===');
+            console.log('Active editor:', activeEditor?.document.fileName);
+            console.log('Language ID:', activeEditor?.document.languageId);
+            console.log('WebviewPanelProvider exists:', !!webviewPanelProvider);
+            console.log('Active panels:', webviewPanelProvider ? Array.from(webviewPanelProvider.getActivePanels().map(p => p.constructor.name)) : 'none');
+            vscode.window.showInformationMessage('Check console for context debug info');
+        })
+    );
+
     // Project Management Commands
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.project.load', async () => {

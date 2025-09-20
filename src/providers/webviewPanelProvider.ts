@@ -37,6 +37,7 @@ export class EditorReplPanelProvider {
 		// Start with collapsed=true so show button appears initially
 		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.exists', false);
 		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.panelCollapsed', true);
+		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', false);
 	}
 
 	/**
@@ -78,7 +79,7 @@ export class EditorReplPanelProvider {
 			// Create webview panel first
 			const panel = vscode.window.createWebviewPanel(
 				'muTwo.connectedRepl',
-				`REPL: ${sourceEditor?.document.fileName.split('/').pop() || 'Untitled'}`,
+				`${sourceEditor?.document.fileName || 'Untitled'}`,
 				vscode.ViewColumn.Active, // Create beside current editor
 				{
 					enableScripts: true,
@@ -86,6 +87,20 @@ export class EditorReplPanelProvider {
 					localResourceRoots: [this.context.extensionUri]
 				}
 			);
+
+			// Set the icon for the panel tab
+			panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'Mu2NoCirc-Red.svg');
+
+			// Set up panel focus tracking for context variables
+			panel.onDidChangeViewState((e) => {
+				if (e.webviewPanel.active) {
+					vscode.commands.executeCommand('setContext', 'activeWebviewPanelId', 'muTwo.connectedRepl');
+				}
+			});
+
+			// Set initial context for the active panel
+			vscode.commands.executeCommand('setContext', 'activeWebviewPanelId', 'muTwo.connectedRepl');
+			console.log('Set context: activeWebviewPanelId = muTwo.connectedRepl');
 
 			// Then position it below using split command
 			await vscode.commands.executeCommand('workbench.action.moveEditorToBelowGroup');
@@ -154,6 +169,40 @@ export class EditorReplPanelProvider {
 	}
 
 	/**
+	 * Show header for the given source editor
+	 */
+	showHeader(sourceEditor?: vscode.TextEditor): void {
+		console.log('EditorReplPanelProvider.showHeader called with editor:', sourceEditor?.document.fileName);
+		const panelId = this.generatePanelId(sourceEditor);
+		console.log('Generated panel ID:', panelId);
+		const panel = this.activePanels.get(panelId);
+		if (panel) {
+			console.log('Found panel, calling showHeader on ConnectedReplPanel');
+			panel.showHeader();
+			vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', false);
+		} else {
+			console.log('No active panel found for panelId:', panelId, 'Available panels:', Array.from(this.activePanels.keys()));
+		}
+	}
+
+	/**
+	 * Hide header for the given source editor
+	 */
+	hideHeader(sourceEditor?: vscode.TextEditor): void {
+		console.log('EditorReplPanelProvider.hideHeader called with editor:', sourceEditor?.document.fileName);
+		const panelId = this.generatePanelId(sourceEditor);
+		console.log('Generated panel ID:', panelId);
+		const panel = this.activePanels.get(panelId);
+		if (panel) {
+			console.log('Found panel, calling hideHeader on ConnectedReplPanel');
+			panel.hideHeader();
+			vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', true);
+		} else {
+			console.log('No active panel found for panelId:', panelId, 'Available panels:', Array.from(this.activePanels.keys()));
+		}
+	}
+
+	/**
 	 * Update VS Code context variables for panel visibility
 	 */
 	private updatePanelContext(panelId: string, collapsed: boolean): void {
@@ -197,6 +246,7 @@ export class ConnectedReplPanel {
 	private plotterTabHelper: PlotterTabHelper;
 	private hasPlotterTab: boolean = false;
 	private isHidden: boolean = false;
+	private headerCollapsed: boolean = false;
 
 	constructor(
 		panel: vscode.WebviewPanel,
@@ -215,6 +265,10 @@ export class ConnectedReplPanel {
 
 		this.setupWebview();
 		this.setupMessageHandling();
+
+		// Initialize context variables
+		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', false);
+		console.log('Initialized context: muTwo.connectedRepl.headerCollapsed = false');
 	}
 
 	private setupWebview(): void {
@@ -316,8 +370,8 @@ export class ConnectedReplPanel {
 	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src vscode-webview: vscode-resource: https:; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net; style-src vscode-webview: vscode-resource: 'unsafe-inline' https://cdn.jsdelivr.net; font-src vscode-webview: vscode-resource: data:; worker-src 'self' blob:;">
 	<title>Connected REPL</title>
 	<link rel="stylesheet" href="${xtermCssUri}">
-	<script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.3.0/lib/xterm.js"></script>
-	<script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.8.0/lib/addon-fit.js"></script>
+	<script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+	<script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
 	<script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 	<style>
 		body {
@@ -347,10 +401,10 @@ export class ConnectedReplPanel {
 			background: var(--vscode-tab-inactiveBackground);
 			color: var(--vscode-tab-inactiveForeground);
 			border: none;
-			padding: 8px 16px;
+			padding: 4px 12px;
 			cursor: pointer;
 			border-right: 1px solid var(--vscode-panel-border);
-			font-size: 13px;
+			font-size: 12px;
 		}
 
 		.tab-button.active {
@@ -360,6 +414,16 @@ export class ConnectedReplPanel {
 
 		.tab-button:hover {
 			background: var(--vscode-tab-hoverBackground);
+		}
+
+		.status-light {
+			display: inline-block;
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: #22c55e;
+			margin-right: 6px;
+			box-shadow: 0 0 4px rgba(34, 197, 94, 0.6);
 		}
 
 		.tab-content {
@@ -378,23 +442,23 @@ export class ConnectedReplPanel {
 
 		#terminal-container {
 			height: 100%;
-			padding: 8px;
+			padding: 4px;
 		}
 
 		#plotter-container {
 			height: 100%;
-			padding: 16px;
+			padding: 8px;
 		}
 
 		#plotter-chart {
-			height: calc(100% - 60px);
+			height: calc(100% - 45px);
 			width: 100%;
 		}
 
 		.plotter-controls {
 			display: flex;
 			gap: 8px;
-			margin-bottom: 16px;
+			margin-bottom: 8px;
 			align-items: center;
 		}
 
@@ -415,8 +479,10 @@ export class ConnectedReplPanel {
 </head>
 <body>
 	<div class="tab-container">
-		<div class="tab-header">
-			<button class="tab-button active" onclick="switchTab('terminal')">REPL</button>
+		<div class="tab-header" id="tabHeader">
+			<button class="tab-button active" onclick="switchTab('terminal')">
+				<span class="status-light"></span>REPL
+			</button>
 			<button class="tab-button" onclick="switchTab('plotter')">Plotter</button>
 		</div>
 
@@ -440,6 +506,7 @@ export class ConnectedReplPanel {
 
 	<script nonce="${nonce}">
 		const vscode = acquireVsCodeApi();
+		const sourceFileName = '${this.sourceEditor?.document.fileName?.replace(/\\/g, '\\\\') || 'Unknown'}';
 
 		// Terminal setup (based on Terminal.tsx logic)
 		let terminal = null;
@@ -471,7 +538,7 @@ export class ConnectedReplPanel {
 		function initTerminal() {
 			const container = document.getElementById('terminal-container');
 
-			terminal = new Terminal({
+			terminal = new window.Terminal({
 				theme: {
 					background: 'var(--vscode-terminal-background)',
 					foreground: 'var(--vscode-terminal-foreground)',
@@ -483,7 +550,7 @@ export class ConnectedReplPanel {
 				scrollback: 1000
 			});
 
-			fitAddon = new FitAddon();
+			fitAddon = new window.FitAddon.FitAddon();
 			terminal.loadAddon(fitAddon);
 
 			terminal.open(container);
@@ -497,16 +564,14 @@ export class ConnectedReplPanel {
 				});
 			});
 
-			// Welcome message
-			terminal.write('\\r\\n\\x1b[1;32mConnected REPL Ready\\x1b[0m\\r\\n');
-			terminal.write('Connected to: ${this.sourceEditor?.document.fileName || 'Unknown'} \\r\\n');
+			// Start with prompt
 			terminal.write('>>> ');
 		}
 
 		// Initialize plotter (based on Plotter.tsx logic)
 		function initPlotter() {
 			const ctx = document.getElementById('plotter-chart').getContext('2d');
-			chart = new Chart(ctx, {
+			chart = new window.Chart(ctx, {
 				type: 'line',
 				data: {
 					datasets: []
@@ -572,6 +637,12 @@ export class ConnectedReplPanel {
 						updatePlotterChart(message.data);
 					}
 					break;
+				case 'showHeader':
+					showTabHeader();
+					break;
+				case 'hideHeader':
+					hideTabHeader();
+					break;
 			}
 		});
 
@@ -581,6 +652,42 @@ export class ConnectedReplPanel {
 				chart.data.datasets = data.series || [];
 				chart.update('none');
 			}
+		}
+
+		function showTabHeader() {
+			const tabHeader = document.getElementById('tabHeader');
+			const tabContent = document.querySelector('.tab-content');
+
+			tabHeader.style.display = 'flex';
+			tabContent.style.height = 'calc(100vh - 33px)'; // Adjust for header height
+
+			// Resize terminal and chart when header shows
+			setTimeout(() => {
+				if (terminal && fitAddon) {
+					fitAddon.fit();
+				}
+				if (chart) {
+					chart.resize();
+				}
+			}, 100);
+		}
+
+		function hideTabHeader() {
+			const tabHeader = document.getElementById('tabHeader');
+			const tabContent = document.querySelector('.tab-content');
+
+			tabHeader.style.display = 'none';
+			tabContent.style.height = '100vh';
+
+			// Resize terminal and chart when header hides
+			setTimeout(() => {
+				if (terminal && fitAddon) {
+					fitAddon.fit();
+				}
+				if (chart) {
+					chart.resize();
+				}
+			}, 100);
 		}
 
 		// Initialize components
@@ -619,6 +726,34 @@ export class ConnectedReplPanel {
 
 	getIsHidden(): boolean {
 		return this.isHidden;
+	}
+
+	showHeader(): void {
+		console.log('ConnectedReplPanel.showHeader called');
+		this.headerCollapsed = false;
+
+		// Send message to webview to show header
+		this.panel.webview.postMessage({
+			type: 'showHeader'
+		});
+		console.log('Sent showHeader message to webview');
+
+		// Update context variable
+		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', false);
+	}
+
+	hideHeader(): void {
+		console.log('ConnectedReplPanel.hideHeader called');
+		this.headerCollapsed = true;
+
+		// Send message to webview to hide header
+		this.panel.webview.postMessage({
+			type: 'hideHeader'
+		});
+		console.log('Sent hideHeader message to webview');
+
+		// Update context variable
+		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', true);
 	}
 
 	dispose(): void {

@@ -71,6 +71,20 @@
 					"icon": "$(layout-panel)",
 					"title": "Hide Connected REPL",
 					"group": "navigation"
+				},
+				{
+					"command": "muTwo.editor.showHeader",
+					"when": "activeWebviewPanelId == 'muTwo.connectedRepl' && muTwo.connectedRepl.headerCollapsed == true",
+					"icon": "$(chevron-down)",
+					"title": "Show Panel Header",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.editor.hideHeader",
+					"when": "activeWebviewPanelId == 'muTwo.connectedRepl' && muTwo.connectedRepl.headerCollapsed != true",
+					"icon": "$(chevron-up)",
+					"title": "Hide Panel Header",
+					"group": "navigation"
 				}
 			],
 			"commandPalette": [
@@ -257,13 +271,25 @@
 				"command": "muTwo.editor.showPanel",
 				"category": "Mu 2",
 				"icon": "$(layout-panel-off)",
-				"title": "Show panel in Mu 2 editor"
+				"title": "Mu 2 editor subpanel: Show"
 			},
 			{
 				"command": "muTwo.editor.hidePanel",
 				"category": "Mu 2",
 				"icon": "$(layout-panel)",
-				"title": "Hide panel in Mu 2 editor"
+				"title": "Mu 2 editor subpanel: Hide"
+			},
+			{
+				"command": "muTwo.editor.showHeader",
+				"when": "activeWebviewPanelId == 'muTwo.connectedRepl' && muTwo.connectedRepl.headerCollapsed == true",
+				"icon": "$(chevron-down)",
+				"title": "Mu 2 editor subpanel header: Show"
+			},
+			{
+				"command": "muTwo.editor.hideHeader",
+				"when": "activeWebviewPanelId == 'muTwo.connectedRepl' && muTwo.connectedRepl.headerCollapsed != true",
+				"icon": "$(chevron-up)",
+				"title": "Mu 2 editor subpanel header: Hide"
 			},
 			{
 				"command": "muTwo.editor.openEditor",
@@ -274,6 +300,11 @@
 				"command": "muTwo.debug.testWebviewPanel",
 				"category": "Mu 2",
 				"title": "Test Webview Panel Creation"
+			},
+			{
+				"command": "muTwo.debug.checkContext",
+				"category": "Mu 2",
+				"title": "Debug Context Values"
 			},
 			{
 				"command": "muTwo.debug.startSession",
