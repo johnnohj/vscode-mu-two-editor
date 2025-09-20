@@ -1,4 +1,4 @@
-# ![Mu 2 logo](/assets/mu2-logo-large.png size=250x250)
+# ![Mu 2 logo](/assets/mu2-logo-large.png | width=200)
 
 # Mu Two Editor - VS Code Extension
 
