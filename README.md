@@ -1,6 +1,6 @@
-# ![Mu 2 logo](/assets/mu2-logo.png)
+# ![Mu2 logo](/assets/mu2-logo.png)
 
-# Mu Two Editor - VS Code Extension
+# Mu2 Editor - VS Code Extension
 
 A professional CircuitPython development environment for VS Code, inspired by the excellent MU Editor.
 
