@@ -32,13 +32,29 @@ class WasmRuntimeWorker {
         try {
             console.log('Initializing CircuitPython WASM...');
 
-            // Create CircuitPython WASM module with I/O handlers
+            // Get library path from environment variable
+            const libraryPath = process.env.CIRCUITPYTHON_LIB_PATH;
+
+            // Create CircuitPython WASM module with I/O handlers and library path configuration
             this.circuitPython = await _createCircuitPythonModule({
                 stdout: (charCode) => {
                     this.outputBuffer += String.fromCharCode(charCode);
                 },
                 stderr: (charCode) => {
                     this.errorBuffer += String.fromCharCode(charCode);
+                },
+                // Configure library file location
+                locateFile: (path, scriptDirectory) => {
+                    // If we have a library path configured, check there first for .mpy files
+                    if (libraryPath && (path.endsWith('.mpy') || path.includes('lib/'))) {
+                        const libFilePath = require('path').join(libraryPath, path);
+                        if (require('fs').existsSync(libFilePath)) {
+                            console.log(`Using library file from: ${libFilePath}`);
+                            return libFilePath;
+                        }
+                    }
+                    // Fallback to default location
+                    return scriptDirectory + path;
                 }
             });
 

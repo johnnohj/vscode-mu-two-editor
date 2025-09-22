@@ -8,7 +8,7 @@
 
 import { EventEmitter } from 'events';
 import * as vscode from 'vscode';
-import { spawn, ChildProcess } from 'child_process';
+import { ChildProcess } from 'child_process';
 import {
     IPythonRuntime,
     PythonRuntimeType,
@@ -21,6 +21,8 @@ import {
     RuntimeConfig
 } from './IPythonRuntime';
 import { AdafruitBundleManager } from './AdafruitBundleManager';
+import { getTaskRunner } from '../sys/taskRunner';
+import { getLogger } from '../sys/unifiedLogger';
 
 /**
  * Blinka-Enabled Python Runtime
@@ -41,6 +43,8 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
     private _connectedDevices = new Map<string, any>();
     private _replSession?: any;
     private _bundleManager: AdafruitBundleManager;
+    private _taskRunner = getTaskRunner();
+    private _logger = getLogger();
 
     constructor(config?: RuntimeConfig, context?: vscode.ExtensionContext) {
         super();
@@ -105,7 +109,7 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
         }
 
         try {
-            console.log('Initializing Blinka-enabled Python runtime...');
+            this._logger.info('EXECUTION', 'Initializing Blinka-enabled Python runtime...');
 
             if (config) {
                 this._config = { ...this._config, ...config };
@@ -126,10 +130,10 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
             this._isInitialized = true;
             this.emit('initialized');
 
-            console.log('✓ Blinka-enabled Python runtime initialization complete');
+            this._logger.info('EXECUTION', '✓ Blinka-enabled Python runtime initialization complete');
 
         } catch (error) {
-            console.error('Blinka-enabled Python runtime initialization failed:', error);
+            this._logger.error('EXECUTION', `Blinka-enabled Python runtime initialization failed: ${error}`);
             throw error;
         }
     }
@@ -139,7 +143,7 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
             return;
         }
 
-        console.log('Disposing Blinka-enabled Python runtime...');
+        this._logger.info('EXECUTION', 'Disposing Blinka-enabled Python runtime...');
 
         // Disconnect from all devices
         for (const deviceId of this._connectedDevices.keys()) {
@@ -161,7 +165,7 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
         this.removeAllListeners();
         this.emit('disposed');
 
-        console.log('✓ Blinka-enabled Python runtime disposed');
+        this._logger.info('EXECUTION', '✓ Blinka-enabled Python runtime disposed');
     }
 
     async reset(): Promise<void> {
@@ -276,11 +280,11 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
                 started: Date.now()
             };
 
-            console.log('Blinka Python REPL started');
+            this._logger.info('EXECUTION', 'Blinka Python REPL started');
             return true;
 
         } catch (error) {
-            console.error('Failed to start Blinka Python REPL:', error);
+            this._logger.error('EXECUTION', `Failed to start Blinka Python REPL: ${error}`);
             return false;
         }
     }
@@ -292,11 +296,11 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
 
         try {
             this._replSession = undefined;
-            console.log('Blinka Python REPL stopped');
+            this._logger.info('EXECUTION', 'Blinka Python REPL stopped');
             return true;
 
         } catch (error) {
-            console.error('Failed to stop Blinka Python REPL:', error);
+            this._logger.error('EXECUTION', `Failed to stop Blinka Python REPL: ${error}`);
             return false;
         }
     }
@@ -396,7 +400,7 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
 
     async installModule(moduleName: string): Promise<boolean> {
         try {
-            console.log(`Installing Python module: ${moduleName}`);
+            this._logger.info('LIBRARIES', `Installing Python module: ${moduleName}`);
 
             // Use bundle manager for Adafruit libraries
             if (moduleName.startsWith('adafruit_') || moduleName.includes('adafruit')) {
@@ -408,7 +412,7 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
             return result.success;
 
         } catch (error) {
-            console.error(`Failed to install module ${moduleName}:`, error);
+            this._logger.error('LIBRARIES', `Failed to install module ${moduleName}: ${error}`);
             return false;
         }
     }
@@ -464,7 +468,7 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
             return false;
 
         } catch (error) {
-            console.error(`Failed to connect to device ${deviceId}:`, error);
+            this._logger.error('EXECUTION', `Failed to connect to device ${deviceId}: ${error}`);
             return false;
         }
     }
@@ -475,7 +479,7 @@ export class BlinkaEnabledPythonRuntime extends EventEmitter implements IPythonR
             this.emit('disconnected', deviceId);
             return true;
         } catch (error) {
-            console.error(`Failed to disconnect from device ${deviceId}:`, error);
+            this._logger.error('EXECUTION', `Failed to disconnect from device ${deviceId}: ${error}`);
             return false;
         }
     }
@@ -507,7 +511,7 @@ print(pins)
                 return { pins: result.output };
             }
         } catch (error) {
-            console.error('Error querying hardware state:', error);
+            this._logger.error('EXECUTION', `Error querying hardware state: ${error}`);
         }
         return {};
     }
@@ -516,10 +520,10 @@ print(pins)
         try {
             // Apply hardware state changes via Blinka
             // This would translate updates to appropriate Blinka commands
-            console.log('Setting hardware state via Blinka:', updates);
+            this._logger.debug('EXECUTION', `Setting hardware state via Blinka: ${JSON.stringify(updates)}`);
             return true;
         } catch (error) {
-            console.error('Error setting hardware state:', error);
+            this._logger.error('EXECUTION', `Error setting hardware state: ${error}`);
             return false;
         }
     }
@@ -542,7 +546,7 @@ print(pins)
             if (!result.success) {
                 throw new Error(`Python not found at: ${this._config.interpreterPath}`);
             }
-            console.log(`✓ Python found: ${result.output}`);
+            this._logger.info('EXECUTION', `✓ Python found: ${result.output}`);
         } catch (error) {
             throw new Error(`Python validation failed: ${error}`);
         }
@@ -558,12 +562,12 @@ print(pins)
 
             if (checkResult.success) {
                 this._blinkaInstalled = true;
-                console.log('✓ Blinka already installed');
+                this._logger.info('LIBRARIES', '✓ Blinka already installed');
                 return;
             }
 
             // Install Blinka if not available
-            console.log('Installing Adafruit Blinka...');
+            this._logger.info('LIBRARIES', 'Installing Adafruit Blinka...');
             const installResult = await this.runPipCommand(['install', 'adafruit-blinka']);
 
             if (!installResult.success) {
@@ -581,7 +585,7 @@ print(pins)
             }
 
             this._blinkaInstalled = true;
-            console.log('✓ Adafruit Blinka installed and verified');
+            this._logger.info('LIBRARIES', '✓ Adafruit Blinka installed and verified');
 
         } catch (error) {
             throw new Error(`Blinka setup failed: ${error}`);
@@ -591,7 +595,7 @@ print(pins)
     private async initializePythonProcess(): Promise<void> {
         // This would set up a persistent Python process for REPL interaction
         // For now, we'll use individual process calls
-        console.log('✓ Python process management ready');
+        this._logger.info('EXECUTION', '✓ Python process management ready');
     }
 
     private async testBlinkaFunctionality(): Promise<void> {
@@ -609,34 +613,28 @@ print("Blinka test successful!")
                 throw new Error('Blinka functionality test failed');
             }
 
-            console.log('✓ Blinka functionality verified');
+            this._logger.info('EXECUTION', '✓ Blinka functionality verified');
         } catch (error) {
             throw new Error(`Blinka test failed: ${error}`);
         }
     }
 
     private async runPythonCommand(args: string[]): Promise<{ success: boolean; output: string; error?: string }> {
-        return new Promise((resolve) => {
-            const process = spawn(this._config.interpreterPath!, args);
-            let output = '';
-            let error = '';
+        const taskId = `python_${Date.now()}`;
 
-            process.stdout?.on('data', (data) => {
-                output += data.toString();
-            });
-
-            process.stderr?.on('data', (data) => {
-                error += data.toString();
-            });
-
-            process.on('close', (code) => {
-                resolve({
-                    success: code === 0,
-                    output: output.trim(),
-                    error: error.trim() || undefined
-                });
-            });
+        const result = await this._taskRunner.executeWithOutput(taskId, {
+            command: this._config.interpreterPath!,
+            args: args,
+            showOutput: false,
+            captureOutput: true,
+            timeout: this._config.executionTimeout
         });
+
+        return {
+            success: result.success,
+            output: result.output || '',
+            error: result.error
+        };
     }
 
     private async runPipCommand(args: string[]): Promise<{ success: boolean; output: string; error?: string }> {
@@ -647,7 +645,13 @@ print("Blinka test successful!")
         code: string,
         context: RuntimeExecutionContext
     ): Promise<{ success: boolean; output: string; error?: string; hardwareChanges?: any[] }> {
-        return this.runPythonCommand(['-c', code]);
+        const result = await this.runPythonCommand(['-c', code]);
+        return {
+            success: result.success,
+            output: result.output,
+            error: result.error,
+            hardwareChanges: [] // Hardware changes would be detected through Blinka monitoring
+        };
     }
 
     private async isModuleInstalled(moduleName: string): Promise<boolean> {

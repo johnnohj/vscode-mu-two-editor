@@ -4,6 +4,21 @@
  * Manages CircuitPython WASM runtime as a Node.js child process for
  * hardware-agnostic code execution and simulation. Provides the same
  * interface as physical devices but backed by virtual hardware.
+ *
+ * ARCHITECTURAL DECISION: Uses Node.js child_process.spawn() instead of VS Code Tasks
+ *
+ * This is a conscious choice for the following reasons:
+ * 1. **Real-time IPC Communication**: Requires bidirectional IPC channel for immediate
+ *    command/response cycles between extension and WASM runtime process
+ * 2. **Persistent Process Management**: WASM runtime must persist across multiple
+ *    code executions to maintain hardware simulation state and variable context
+ * 3. **Low-latency Operation**: Interactive REPL requires sub-100ms response times
+ *    that VS Code Tasks cannot provide due to their designed overhead
+ * 4. **Hardware State Synchronization**: Continuous monitoring and updating of
+ *    simulated hardware state requires dedicated process control
+ *
+ * VS Code Tasks are designed for user-visible, discrete operations (build, test, etc.)
+ * while this component needs invisible, high-performance background processing.
  */
 
 import * as vscode from 'vscode';
@@ -11,6 +26,8 @@ import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 import { AdafruitBundleManager } from '../runtime/AdafruitBundleManager';
+import { WasmDeploymentManager } from './wasmDeploymentManager';
+import { getLogger } from './unifiedLogger';
 
 // Import existing interfaces from debugAdapter
 import {
@@ -78,8 +95,9 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
     private config: Required<WasmRuntimeConfig>;
     private currentEnvironment: ExecutionEnvironment | null = null;
     private hardwareTimeline: HardwareStateTimeline | null = null;
-    private outputChannel: vscode.OutputChannel;
     private bundleManager: AdafruitBundleManager;
+    private deploymentManager: WasmDeploymentManager;
+    private logger = getLogger();
 
     // Hardware state cache for sub-250ms sync performance
     private hardwareStateCache = new Map<string, any>();
@@ -90,18 +108,18 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
         super();
 
         this.config = {
-            runtimePath: config.runtimePath || path.join(__dirname, 'bin', 'wasm-runtime-worker.mjs'),
+            runtimePath: config.runtimePath || path.join(__dirname, '../public/bin', 'wasm-runtime-worker.mjs'),
             memorySize: config.memorySize || 512, // 512KB default
             timeout: config.timeout || 30000, // 30s default
             enableHardwareSimulation: config.enableHardwareSimulation ?? true,
             debugMode: config.debugMode ?? false
         };
 
-        this.outputChannel = vscode.window.createOutputChannel('WASM Runtime');
         this.bundleManager = AdafruitBundleManager.getInstance(context);
+        this.deploymentManager = WasmDeploymentManager.getInstance(context!, this.bundleManager);
 
         if (this.config.debugMode) {
-            this.outputChannel.appendLine('WASM Runtime Manager initialized in debug mode');
+            this.logger.debug('WASM_RUNTIME', 'WASM Runtime Manager initialized in debug mode');
         }
     }
 
@@ -114,21 +132,30 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
         }
 
         try {
-            this.outputChannel.appendLine('Starting CircuitPython WASM runtime...');
-            this.outputChannel.appendLine(`Runtime path: ${this.config.runtimePath}`);
+            this.logger.info('WASM_RUNTIME', 'Starting CircuitPython WASM runtime...');
 
-            // Check if runtime file exists
-            if (!require('fs').existsSync(this.config.runtimePath)) {
-                throw new Error(`WASM runtime file not found: ${this.config.runtimePath}`);
-            }
+            // Deploy WASM runtime to globalStorage if needed
+            const deployment = await this.deploymentManager.deployWasmRuntime();
+            this.config.runtimePath = deployment.runtimePath;
+
+            this.logger.info('WASM_RUNTIME', `Runtime path: ${this.config.runtimePath}`);
+            this.logger.info('WASM_RUNTIME', `Library path: ${deployment.libraryPath}`);
+
+            // Configure library path for WASM runtime
+            await this.deploymentManager.configureWasmLibraryPath(
+                deployment.runtimePath,
+                deployment.libraryPath
+            );
 
             // Launch Node.js process with circuitpython.mjs
+            // NOTE: Using spawn() instead of VS Code Tasks for real-time IPC and persistent state
             this.wasmProcess = spawn('node', [this.config.runtimePath], {
                 stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
                 env: {
                     ...process.env,
                     CIRCUITPYTHON_WASM_MEMORY: this.config.memorySize.toString(),
-                    CIRCUITPYTHON_WASM_DEBUG: this.config.debugMode.toString()
+                    CIRCUITPYTHON_WASM_DEBUG: this.config.debugMode.toString(),
+                    CIRCUITPYTHON_LIB_PATH: deployment.libraryPath
                 }
             });
 
@@ -147,17 +174,17 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
                 await this.bundleManager.initialize();
                 await this.syncAdafruitLibraries();
             } catch (error) {
-                this.outputChannel.appendLine(`⚠️ Bundle manager initialization failed (continuing): ${error}`);
+                this.logger.warn('WASM_RUNTIME', `Bundle manager initialization failed (continuing): ${error}`);
                 // Continue without bundle manager for now
             }
 
             this.isInitialized = true;
-            this.outputChannel.appendLine('✓ CircuitPython WASM runtime ready with Adafruit Bundle');
+            this.logger.success('WASM_RUNTIME', 'CircuitPython WASM runtime ready with Adafruit Bundle');
 
             this.emit('ready');
 
         } catch (error) {
-            this.outputChannel.appendLine(`❌ WASM runtime initialization failed: ${error}`);
+            this.logger.error('WASM_RUNTIME', `WASM runtime initialization failed: ${error}`);
             throw error;
         }
     }
@@ -248,7 +275,7 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
             return executionResult;
 
         } catch (error) {
-            this.outputChannel.appendLine(`Code execution error: ${error}`);
+            this.logger.error('WASM_RUNTIME', `Code execution error: ${error}`);
             return {
                 success: false,
                 output: '',
@@ -381,7 +408,7 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
         this.hardwareStateCache.clear();
 
         this.isInitialized = false;
-        this.outputChannel.dispose();
+        // Output channel disposed by unified logger
 
         this.emit('disposed');
         this.removeAllListeners();
@@ -399,12 +426,12 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
 
         // Handle process events
         this.wasmProcess.on('error', (error) => {
-            this.outputChannel.appendLine(`WASM process error: ${error}`);
+            this.logger.error('WASM_RUNTIME', `WASM process error: ${error}`);
             this.emit('error', error);
         });
 
         this.wasmProcess.on('exit', (code, signal) => {
-            this.outputChannel.appendLine(`WASM process exited with code ${code}, signal ${signal}`);
+            this.logger.info('WASM_RUNTIME', `WASM process exited with code ${code}, signal ${signal}`);
             this.isInitialized = false;
             this.emit('exit', { code, signal });
         });
@@ -412,11 +439,11 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
         // Handle stdout/stderr for debugging
         if (this.config.debugMode) {
             this.wasmProcess.stdout?.on('data', (data) => {
-                this.outputChannel.appendLine(`WASM stdout: ${data}`);
+                this.logger.debug('WASM_RUNTIME', `WASM stdout: ${data}`);
             });
 
             this.wasmProcess.stderr?.on('data', (data) => {
-                this.outputChannel.appendLine(`WASM stderr: ${data}`);
+                this.logger.debug('WASM_RUNTIME', `WASM stderr: ${data}`);
             });
         }
     }
@@ -570,7 +597,7 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
      */
     private async syncAdafruitLibraries(): Promise<void> {
         try {
-            this.outputChannel.appendLine('Syncing CircuitPython Bundle to WASM via circup...');
+            this.logger.info('WASM_RUNTIME', 'Syncing CircuitPython Bundle to WASM via circup...');
 
             // Get WASM runtime directory
             const wasmDir = path.dirname(this.config.runtimePath);
@@ -579,14 +606,14 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
             const success = await this.bundleManager.syncToWasmRuntime(wasmDir);
 
             if (success) {
-                this.outputChannel.appendLine('✓ Adafruit Bundle synced to WASM runtime');
+                this.logger.success('WASM_RUNTIME', 'Adafruit Bundle synced to WASM runtime');
                 this.emit('librariesSynced');
             } else {
-                this.outputChannel.appendLine('⚠️ Library sync completed with warnings');
+                this.logger.warn('WASM_RUNTIME', 'Library sync completed with warnings');
             }
 
         } catch (error) {
-            this.outputChannel.appendLine(`❌ Failed to sync libraries: ${error}`);
+            this.logger.error('WASM_RUNTIME', `Failed to sync libraries: ${error}`);
             // Don't throw - WASM can still function without external libraries
         }
     }

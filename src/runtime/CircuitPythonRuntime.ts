@@ -39,10 +39,12 @@ export class CircuitPythonRuntime extends EventEmitter implements IPythonRuntime
     private _deviceDetector?: MuDeviceDetector;
     private _connectedDevices = new Map<string, MuDevice>();
     private _replSession?: any;
+    private _context?: vscode.ExtensionContext;
 
-    constructor(config?: RuntimeConfig) {
+    constructor(config?: RuntimeConfig, context?: vscode.ExtensionContext) {
         super();
 
+        this._context = context;
         this._config = {
             type: 'circuitpython',
             version: '8.2.6', // Default version
@@ -112,7 +114,7 @@ export class CircuitPythonRuntime extends EventEmitter implements IPythonRuntime
                     runtimePath: this._config.wasmPath,
                     enableHardwareSimulation: true,
                     debugMode: this._config.debugMode
-                });
+                }, this._context);
 
                 await this._wasmRuntime.initialize();
                 console.log('✓ CircuitPython WASM runtime initialized');

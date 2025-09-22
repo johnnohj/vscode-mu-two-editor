@@ -75,7 +75,7 @@ export class ReplSessionHelper {
 			this.wasmRuntimeManager = new WasmRuntimeManager({
 				enableHardwareSimulation: true,
 				debugMode: true
-			});
+			}, this.context);
 		}
 
 		// TODO: Connect WASM runtime to session

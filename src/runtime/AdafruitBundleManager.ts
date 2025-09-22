@@ -11,8 +11,8 @@
 import { EventEmitter } from 'events';
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { spawn, ChildProcess } from 'child_process';
 import { IPythonRuntime, RuntimeModule, PythonRuntimeType } from './IPythonRuntime';
+import { getTaskRunner } from '../sys/taskRunner';
 
 export interface LibraryInfo {
     name: string;
@@ -48,6 +48,7 @@ export class AdafruitBundleManager extends EventEmitter {
     private _bundleManifest?: BundleManifest;
     private _circupAvailable = false;
     private _bundlePath: string;
+    private taskRunner = getTaskRunner();
 
     constructor(
         private context: vscode.ExtensionContext,
@@ -213,23 +214,12 @@ export class AdafruitBundleManager extends EventEmitter {
     }
 
     private async checkCircupAvailable(): Promise<boolean> {
-        return new Promise((resolve) => {
-            const process = spawn('circup', ['--version'], { shell: true });
-
-            process.on('close', (code) => {
-                resolve(code === 0);
-            });
-
-            process.on('error', () => {
-                resolve(false);
-            });
-
-            // Timeout after 3 seconds
-            setTimeout(() => {
-                process.kill();
-                resolve(false);
-            }, 3000);
-        });
+        try {
+            return await this.taskRunner.checkCommandAvailable('circup');
+        } catch (error) {
+            console.warn('Failed to check circup availability:', error);
+            return false;
+        }
     }
 
     /**
@@ -247,55 +237,53 @@ export class AdafruitBundleManager extends EventEmitter {
             return false;
         }
 
-        return new Promise((resolve) => {
-            const args = ['install', libraryName];
+        const args = ['install', libraryName];
 
-            // If no target path, circup will auto-detect connected CircuitPython device
-            if (targetPath) {
-                args.push('--path', targetPath);
-            }
+        // If no target path, circup will auto-detect connected CircuitPython device
+        if (targetPath) {
+            args.push('--path', targetPath);
+        }
 
-            const process = spawn('circup', args, { shell: true });
-
-            process.on('close', (code) => {
-                const success = code === 0;
-                if (success) {
-                    console.log(`✓ Installed ${libraryName} with circup`);
-                    this.emit('libraryInstalled', { name: libraryName, tool: 'circup' });
-                }
-                resolve(success);
-            });
-
-            process.on('error', (error) => {
-                console.error(`circup install error:`, error);
-                resolve(false);
-            });
+        const taskId = `circup_install_${libraryName}_${Date.now()}`;
+        const result = await this.taskRunner.executeTask(taskId, {
+            command: 'circup',
+            args,
+            showOutput: true,
+            timeout: 30000
         });
+
+        if (result.success) {
+            console.log(`✓ Installed ${libraryName} with circup`);
+            this.emit('libraryInstalled', { name: libraryName, tool: 'circup' });
+        } else {
+            console.error(`circup install failed: ${result.error || 'Unknown error'}`);
+        }
+
+        return result.success;
     }
 
     private async installWithPip(libraryName: string): Promise<boolean> {
-        return new Promise((resolve) => {
-            // Install Adafruit libraries for standard Python (typically includes Blinka)
-            const packageName = libraryName.startsWith('adafruit-')
-                ? libraryName
-                : `adafruit-circuitpython-${libraryName.replace('adafruit_', '')}`;
+        // Install Adafruit libraries for standard Python (typically includes Blinka)
+        const packageName = libraryName.startsWith('adafruit-')
+            ? libraryName
+            : `adafruit-circuitpython-${libraryName.replace('adafruit_', '')}`;
 
-            const process = spawn('pip', ['install', packageName], { shell: true });
-
-            process.on('close', (code) => {
-                const success = code === 0;
-                if (success) {
-                    console.log(`✓ Installed ${packageName} with pip`);
-                    this.emit('libraryInstalled', { name: libraryName, tool: 'pip' });
-                }
-                resolve(success);
-            });
-
-            process.on('error', (error) => {
-                console.error(`pip install error:`, error);
-                resolve(false);
-            });
+        const taskId = `pip_install_${packageName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
+        const result = await this.taskRunner.executeTask(taskId, {
+            command: 'pip',
+            args: ['install', packageName],
+            showOutput: true,
+            timeout: 60000 // pip installs can take longer
         });
+
+        if (result.success) {
+            console.log(`✓ Installed ${packageName} with pip`);
+            this.emit('libraryInstalled', { name: libraryName, tool: 'pip' });
+        } else {
+            console.error(`pip install failed: ${result.error || 'Unknown error'}`);
+        }
+
+        return result.success;
     }
 
     private async installForMicroPython(libraryName: string): Promise<boolean> {

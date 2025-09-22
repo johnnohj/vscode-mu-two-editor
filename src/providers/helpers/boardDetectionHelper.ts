@@ -120,7 +120,7 @@ export class BoardDetectionHelper {
 			this.wasmRuntimeManager = new WasmRuntimeManager({
 				enableHardwareSimulation: true,
 				debugMode: true
-			});
+			}, this.context);
 		}
 
 		return {

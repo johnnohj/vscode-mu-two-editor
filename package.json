@@ -36,6 +36,12 @@
 		"workspaceContains:**/main.py"
 	],
 	"main": "./dist/extension.js",
+	"files": [
+		"dist/**/*",
+		"assets/**/*",
+		"README.md",
+		"LICENSE"
+	],
 	"contributes": {
 		"viewsContainers": {
 			"panel": [

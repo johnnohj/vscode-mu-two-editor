@@ -16,11 +16,12 @@ suite('WASM Integration Tests', () => {
 
     setup(async () => {
         // Initialize WASM runtime manager
+        // Note: In tests, context might be undefined - the deployment manager will handle gracefully
         wasmRuntimeManager = new WasmRuntimeManager({
             enableHardwareSimulation: true,
             debugMode: true,
             timeout: 10000
-        });
+        }, undefined);
 
         // Initialize debug adapter with WASM integration
         debugAdapter = new MuDebugAdapter();

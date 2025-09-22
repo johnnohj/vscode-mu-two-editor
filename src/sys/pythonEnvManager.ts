@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { spawn } from 'child_process';
+import { getTaskRunner } from './taskRunner';
 
 export interface PythonEnvironmentInfo {
 	path: string;
@@ -11,10 +11,11 @@ export interface PythonEnvironmentInfo {
 export class PythonEnvManager {
 	private context: vscode.ExtensionContext;
 	private muTwoEnvPath?: string;
+	private taskRunner = getTaskRunner();
 	private readonly requiredPackages = [
 		'setuptools',
 		'circup',
-		'adafruit-blinka', 
+		'adafruit-blinka',
 		'pyserial',
 		'esptool'
 	];

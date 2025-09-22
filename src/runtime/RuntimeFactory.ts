@@ -27,6 +27,8 @@ import { MicroPythonRuntime } from './MicroPythonRuntime';
  */
 export class RuntimeFactory implements IRuntimeFactory {
 
+    constructor(private context?: vscode.ExtensionContext) {}
+
     async createRuntime(type: PythonRuntimeType, config?: RuntimeConfig): Promise<IPythonRuntime> {
         console.log(`Creating ${type} runtime...`);
 
@@ -37,7 +39,7 @@ export class RuntimeFactory implements IRuntimeFactory {
 
         switch (type) {
             case 'circuitpython':
-                return new CircuitPythonRuntime(runtimeConfig);
+                return new CircuitPythonRuntime(runtimeConfig, this.context);
 
             case 'micropython':
                 return new MicroPythonRuntime(runtimeConfig);
@@ -129,7 +131,7 @@ export class RuntimeFactory implements IRuntimeFactory {
                     ...baseConfig,
                     type: 'circuitpython',
                     version: '8.2.6',
-                    wasmPath: path.join(__dirname, '../bin/wasm-runtime-worker.mjs'),
+                    wasmPath: path.join(__dirname, '../public/bin/wasm-runtime-worker.mjs'),
                     memoryLimit: 512 * 1024 // 512KB for WASM
                 };
 
@@ -252,9 +254,9 @@ export class RuntimeManager extends EventEmitter implements IRuntimeManager {
     private deviceRuntimeMap = new Map<string, PythonRuntimeType>();
     private _isInitialized = false;
 
-    constructor(factory?: IRuntimeFactory) {
+    constructor(factory?: IRuntimeFactory, context?: vscode.ExtensionContext) {
         super();
-        this.factory = factory || new RuntimeFactory();
+        this.factory = factory || new RuntimeFactory(context);
     }
 
     async initialize(): Promise<void> {
