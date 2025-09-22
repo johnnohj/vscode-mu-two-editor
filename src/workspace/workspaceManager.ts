@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { IDevice } from "../devices/core/deviceDetector";
 import { MuTwoWorkspace, WorkspaceConfig, BoardAssociation, PendingDownload, WorkspaceRegistry, WorkspaceRegistryEntry, WorkspaceFiles } from "./workspace";
 import { LearnGuideProvider } from "./integration/learnGuideProvider";
+import { getLogger } from '../sys/unifiedLogger';
 
 export interface WorkspaceCreationOptions {
     device?: IDevice;
@@ -13,13 +14,13 @@ export interface WorkspaceCreationOptions {
 export class MuTwoWorkspaceManager implements vscode.Disposable {
     private _workspaceUtil: MuTwoWorkspace;
     private _learnGuideProvider: LearnGuideProvider;
-    private _outputChannel: vscode.OutputChannel;
+    private _logger = getLogger();
 
     constructor(context: vscode.ExtensionContext) {
         this._workspaceUtil = MuTwoWorkspace.getInstance(context);
         this._learnGuideProvider = new LearnGuideProvider();
-        this._outputChannel = vscode.window.createOutputChannel('Mu 2 Workspace Manager');
-        
+        // Using unified logger instead of createOutputChannel('Mu 2 Workspace Manager')
+
         // Initialize development mode handling
         this.initializeDevelopmentMode();
     }
@@ -37,7 +38,7 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
             // Handle manual workspace creation (no board detected)
             return await this.handleManualWorkspaceCreation(options);
         } catch (error) {
-            this._outputChannel.appendLine(`Workspace creation error: ${error}`);
+            this._logger.error('WORKSPACE', `Workspace creation error: ${error}`);
             vscode.window.showErrorMessage(`Failed to create workspace: ${error}`);
             return false;
         }
@@ -115,7 +116,7 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
         let workspaceName: string;
         if (this._workspaceUtil.isDevelopmentMode() && !options.device && !options.workspaceName) {
             workspaceName = 'mu2-test';
-            this._outputChannel.appendLine('Development mode: Using "mu2-test" as virtual workspace name');
+            this._logger.info('WORKSPACE', 'Development mode: Using "mu2-test" as virtual workspace name');
         } else {
             workspaceName = options.workspaceName || options.device?.displayName || 'CircuitPython Project';
         }
@@ -127,7 +128,7 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
 
         try {
             await vscode.workspace.fs.createDirectory(workspaceUri);
-            this._outputChannel.appendLine(`Created workspace directory: ${workspaceUri}`);
+            this._logger.info('WORKSPACE', `Created workspace directory: ${workspaceUri}`);
 
             // Create file structure
             await this.createWorkspaceFileStructure(workspaceUri, workspaceId, workspaceName, options.device);
@@ -142,14 +143,14 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
             await vscode.commands.executeCommand('vscode.openFolder', workspaceUri, !reuseWindow);
             
             if (reuseWindow) {
-                this._outputChannel.appendLine('Development mode: Reusing current window for workspace');
+                this._logger.info('WORKSPACE', 'Development mode: Reusing current window for workspace');
             }
 
-            this._outputChannel.appendLine(`Workspace created and opened: ${workspaceUri}`);
+            this._logger.info('WORKSPACE', `Workspace created and opened: ${workspaceUri}`);
             return true;
 
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to create workspace structure: ${error}`);
+            this._logger.error('WORKSPACE', `Failed to create workspace structure: ${error}`);
             throw error;
         }
     }
@@ -225,7 +226,7 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
             new TextEncoder().encode(readmeContent)
         );
 
-        this._outputChannel.appendLine(`Created workspace file structure in ${workspaceUri.fsPath}`);
+        this._logger.info('WORKSPACE', `Created workspace file structure in ${workspaceUri.fsPath}`);
     }
 
     /**
@@ -422,11 +423,11 @@ while True:
             await vscode.commands.executeCommand('vscode.openFolder', workspaceUri, !reuseWindow);
             
             if (reuseWindow) {
-                this._outputChannel.appendLine('Development mode: Reusing current window for existing workspace');
+                this._logger.info('WORKSPACE', 'Development mode: Reusing current window for existing workspace');
             }
             return true;
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to open workspace: ${error}`);
+            this._logger.error('WORKSPACE', `Failed to open workspace: ${error}`);
             vscode.window.showErrorMessage(`Failed to open workspace: ${error}`);
             return false;
         }
@@ -506,10 +507,10 @@ while True:
             }
 
             vscode.window.showInformationMessage(`Board ${device.displayName} has been associated with this workspace.`);
-            this._outputChannel.appendLine(`Associated board ${device.displayName} with workspace`);
+            this._logger.info('WORKSPACE', `Associated board ${device.displayName} with workspace`);
 
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to associate board: ${error}`);
+            this._logger.error('WORKSPACE', `Failed to associate board: ${error}`);
             vscode.window.showErrorMessage(`Failed to associate board: ${error}`);
         }
     }
@@ -675,7 +676,7 @@ while True:
         this._registry!.workspaces[workspaceId] = workspaceEntry;
         await this.saveRegistry();
 
-        this._outputChannel.appendLine(`Created enhanced workspace: ${options.name} (ID: ${workspaceId})`);
+        this._logger.info('WORKSPACE', `Created enhanced workspace: ${options.name} (ID: ${workspaceId})`);
         return workspaceId;
     }
 
@@ -703,13 +704,13 @@ while True:
             await vscode.commands.executeCommand('vscode.openFolder', workspaceUri, !reuseWindow);
             
             if (reuseWindow) {
-                this._outputChannel.appendLine('Development mode: Reusing current window for enhanced workspace');
+                this._logger.info('WORKSPACE', 'Development mode: Reusing current window for enhanced workspace');
             }
             
-            this._outputChannel.appendLine(`Opened enhanced workspace: ${workspace.name}`);
+            this._logger.info('WORKSPACE', `Opened enhanced workspace: ${workspace.name}`);
             return true;
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to open workspace ${workspace.name}: ${error}`);
+            this._logger.error('WORKSPACE', `Failed to open workspace ${workspace.name}: ${error}`);
             vscode.window.showErrorMessage(`Failed to open workspace: ${error}`);
             return false;
         }
@@ -743,10 +744,10 @@ while True:
             delete this._registry!.workspaces[workspaceId];
             await this.saveRegistry();
 
-            this._outputChannel.appendLine(`Deleted enhanced workspace: ${workspace.name}`);
+            this._logger.info('WORKSPACE', `Deleted enhanced workspace: ${workspace.name}`);
             return true;
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to delete workspace: ${error}`);
+            this._logger.error('WORKSPACE', `Failed to delete workspace: ${error}`);
             return false;
         }
     }
@@ -788,10 +789,10 @@ while True:
                 new TextEncoder().encode(JSON.stringify(codeWorkspaceContent, null, 2))
             );
 
-            this._outputChannel.appendLine(`Restored workspace to initial config: ${workspace.name}`);
+            this._logger.info('WORKSPACE', `Restored workspace to initial config: ${workspace.name}`);
             return true;
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to restore workspace: ${error}`);
+            this._logger.error('WORKSPACE', `Failed to restore workspace: ${error}`);
             return false;
         }
     }
@@ -851,7 +852,7 @@ while True:
      */
     private async initializeDevelopmentMode(): Promise<void> {
         if (this._workspaceUtil.isDevelopmentMode()) {
-            this._outputChannel.appendLine('Development mode detected for mu2-test workspace');
+            this._logger.info('WORKSPACE', 'Development mode detected for mu2-test workspace');
             
             // Clean test workspace files from previous sessions
             await this._workspaceUtil.cleanTestWorkspaceFiles();
@@ -859,7 +860,7 @@ while True:
             // Set up window close handler for log file cleanup
             this.setupWindowCloseHandler();
             
-            this._outputChannel.appendLine(`Test workspace session: ${this._workspaceUtil.getSessionId()}`);
+            this._logger.info('WORKSPACE', `Test workspace session: ${this._workspaceUtil.getSessionId()}`);
         }
     }
 
@@ -897,7 +898,7 @@ while True:
             const extension = vscode.extensions.getExtension('mu-two.mu-two-editor');
             if (extension?.exports?.context) {
                 await extension.exports.context.globalState.update(testWorkspaceKey, undefined);
-                this._outputChannel.appendLine('Cleaned up test workspace logs on session end');
+                this._logger.info('WORKSPACE', 'Cleaned up test workspace logs on session end');
             }
         } catch (error) {
             console.warn('Failed to clean up test workspace logs:', error);
@@ -911,11 +912,11 @@ while True:
         try {
             await this._workspaceUtil.clearTestWorkspaceData();
             vscode.window.showInformationMessage('Test workspace data cleared successfully');
-            this._outputChannel.appendLine('Test workspace data cleared by user command');
+            this._logger.info('WORKSPACE', 'Test workspace data cleared by user command');
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`Failed to clear test workspace data: ${errorMessage}`);
-            this._outputChannel.appendLine(`Failed to clear test workspace data: ${errorMessage}`);
+            this._logger.error('WORKSPACE', `Failed to clear test workspace data: ${errorMessage}`);
         }
     }
 
@@ -933,7 +934,7 @@ while True:
                 if (!sessionInitialized) {
                     // Mark session as initialized and treat as non-Mu2 workspace
                     await extension.exports.context.globalState.update(sessionKey, true);
-                    this._outputChannel.appendLine('Treating mu2-test workspace as non-Mu2 for this session');
+                    this._logger.info('WORKSPACE', 'Treating mu2-test workspace as non-Mu2 for this session');
                     return true;
                 }
             }
@@ -947,7 +948,7 @@ while True:
      * Dispose resources
      */
     public dispose(): void {
-        this._outputChannel.dispose();
+        // Using unified logger instead of disposing output channel
         this._learnGuideProvider.dispose();
     }
 }

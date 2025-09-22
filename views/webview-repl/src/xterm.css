@@ -103,6 +103,7 @@ body {
 
 .xterm .composition-view {
     /* TODO: Composition position got messed up somewhere */
+    /* NOTE: Above TODO is from xterm.js library source, not our code - can ignore */
     background: inherit;
 	 color: var(--vscode-terminal-foreground);
     color: #c8c8c8;

@@ -8,6 +8,9 @@
 import * as vscode from 'vscode';
 import { BoardAssociation } from './boardDetectionHelper';
 import { WasmRuntimeManager } from '../../sys/wasmRuntimeManager';
+import { getLogger } from '../../sys/unifiedLogger';
+import { MuTwoRuntimeCoordinator } from '../../sys/unifiedRuntimeCoordinator';
+import { getService } from '../../sys/serviceRegistry';
 
 export interface ReplSessionConfig {
 	autoExecuteOnStart: boolean;
@@ -30,6 +33,7 @@ export interface ReplSession {
 export class ReplSessionHelper {
 	private activeSessions = new Map<string, ReplSession>();
 	private wasmRuntimeManager?: WasmRuntimeManager;
+	private logger = getLogger();
 
 	constructor(private context: vscode.ExtensionContext) {}
 
@@ -41,7 +45,7 @@ export class ReplSessionHelper {
 		boardAssociation: BoardAssociation,
 		config: ReplSessionConfig = { autoExecuteOnStart: false, enableEditorSync: true, enablePlotterOutput: true }
 	): Promise<ReplSession> {
-		console.log('ReplSessionHelper: Initializing REPL session');
+		this.logger.info('EXTENSION', 'ReplSessionHelper: Initializing REPL session');
 
 		const sessionId = this.generateSessionId(boardAssociation);
 
@@ -59,7 +63,7 @@ export class ReplSessionHelper {
 		}
 
 		this.activeSessions.set(sessionId, session);
-		console.log(`ReplSessionHelper: Session ${sessionId} initialized successfully`);
+		this.logger.info('EXTENSION', `ReplSessionHelper: Session ${sessionId} initialized successfully`);
 
 		return session;
 	}
@@ -68,14 +72,29 @@ export class ReplSessionHelper {
 	 * Initialize session for virtual board (WASM runtime)
 	 */
 	private async initializeVirtualSession(session: ReplSession, config: ReplSessionConfig): Promise<void> {
-		console.log('ReplSessionHelper: Initializing virtual REPL session');
+		this.logger.info('EXTENSION', 'ReplSessionHelper: Initializing virtual REPL session');
 
 		// Initialize WASM runtime if not already done
 		if (!this.wasmRuntimeManager) {
-			this.wasmRuntimeManager = new WasmRuntimeManager({
-				enableHardwareSimulation: true,
-				debugMode: true
-			}, this.context);
+			try {
+				// Use shared WASM runtime from unified coordinator
+				const coordinator = getService<MuTwoRuntimeCoordinator>('runtimeCoordinator');
+				if (coordinator) {
+					this.wasmRuntimeManager = await coordinator.getSharedWasmRuntime();
+					this.logger.info('EXTENSION', 'ReplSessionHelper: Using shared WASM runtime from coordinator');
+				} else {
+					// Fallback: create runtime directly if coordinator not available
+					this.logger.warn('EXTENSION', 'ReplSessionHelper: Coordinator not available, creating runtime directly');
+					this.wasmRuntimeManager = new WasmRuntimeManager({
+						enableHardwareSimulation: true,
+						debugMode: true
+					}, this.context);
+					await this.wasmRuntimeManager.initialize();
+				}
+			} catch (error) {
+				this.logger.error('EXTENSION', 'ReplSessionHelper: Failed to get WASM runtime', error);
+				throw error;
+			}
 		}
 
 		// TODO: Connect WASM runtime to session
@@ -86,7 +105,7 @@ export class ReplSessionHelper {
 	 * Initialize session for physical board
 	 */
 	private async initializePhysicalSession(session: ReplSession, config: ReplSessionConfig): Promise<void> {
-		console.log('ReplSessionHelper: Initializing physical board REPL session');
+		this.logger.info('EXTENSION', 'ReplSessionHelper: Initializing physical board REPL session');
 
 		const device = session.boardAssociation.device;
 		if (!device) {
@@ -108,18 +127,18 @@ export class ReplSessionHelper {
 			throw new Error(`Invalid or inactive session: ${sessionId}`);
 		}
 
-		console.log('ReplSessionHelper: Executing editor content in REPL session');
+		this.logger.info('EXTENSION', 'ReplSessionHelper: Executing editor content in REPL session');
 
 		// Get active editor content
 		const activeEditor = vscode.window.activeTextEditor;
 		if (!activeEditor) {
-			console.warn('ReplSessionHelper: No active editor found');
+			this.logger.warn('EXTENSION', 'ReplSessionHelper: No active editor found');
 			return;
 		}
 
 		const editorContent = activeEditor.document.getText();
 		if (!editorContent.trim()) {
-			console.warn('ReplSessionHelper: Editor content is empty');
+			this.logger.warn('EXTENSION', 'ReplSessionHelper: Editor content is empty');
 			return;
 		}
 
@@ -141,14 +160,14 @@ export class ReplSessionHelper {
 			throw new Error('WASM runtime not initialized');
 		}
 
-		console.log('ReplSessionHelper: Executing code in virtual REPL');
+		this.logger.info('EXTENSION', 'ReplSessionHelper: Executing code in virtual REPL');
 
 		try {
 			// TODO: Execute code in WASM runtime
 			// const result = await this.wasmRuntimeManager.executeCode(code);
-			console.log('ReplSessionHelper: Virtual execution completed');
+			this.logger.info('EXTENSION', 'ReplSessionHelper: Virtual execution completed');
 		} catch (error) {
-			console.error('ReplSessionHelper: Virtual execution failed:', error);
+			this.logger.error('EXTENSION', 'ReplSessionHelper: Virtual execution failed:', error);
 			throw error;
 		}
 	}
@@ -162,14 +181,14 @@ export class ReplSessionHelper {
 			throw new Error('No device found for physical execution');
 		}
 
-		console.log('ReplSessionHelper: Executing code in physical REPL');
+		this.logger.info('EXTENSION', 'ReplSessionHelper: Executing code in physical REPL');
 
 		try {
 			// TODO: Execute code on physical device
 			// This would integrate with existing device manager/debug adapter
-			console.log('ReplSessionHelper: Physical execution completed');
+			this.logger.info('EXTENSION', 'ReplSessionHelper: Physical execution completed');
 		} catch (error) {
-			console.error('ReplSessionHelper: Physical execution failed:', error);
+			this.logger.error('EXTENSION', 'ReplSessionHelper: Physical execution failed:', error);
 			throw error;
 		}
 	}
@@ -210,7 +229,7 @@ export class ReplSessionHelper {
 			return;
 		}
 
-		console.log(`ReplSessionHelper: Closing session ${sessionId}`);
+		this.logger.info('EXTENSION', `ReplSessionHelper: Closing session ${sessionId}`);
 
 		// Cleanup session resources
 		session.isActive = false;
@@ -231,8 +250,7 @@ export class ReplSessionHelper {
 		}
 
 		if (this.wasmRuntimeManager) {
-			// TODO: Add dispose method to WasmRuntimeManager if not present
-			// this.wasmRuntimeManager.dispose();
+			this.wasmRuntimeManager.dispose();
 		}
 	}
 }

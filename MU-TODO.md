@@ -6,11 +6,10 @@
 **Last Updated - 19 September 2025 by jef**
 
 
-## NEW WEBVIEW UI GAMEPLAN
+## FUTURE IMPROVEMENTS
 
-- The main REPL will first initialize with three options: Blinka-Python, WASM-Node CircuitPython, and PyScript [CircuitPython FruitJam OS support in future?].
-- The main REPL webview view should run as frontend for headless cli-style processes of the above via postMessage() APIs. The webview view will continue to run a full instance of Xterm.js while WASM-Node CircuitPython, at least, will use xterm headless (I think). Both may make use of the Xterm.js serialize addon.
-- The main REPL, ideally and initially, will be the point of contact for: checking/fetching CircuitPython libraries (circup) [opening a dedicated library tree UI view in the Explorer tab area], updating boards definitions, other shell-like functions on behalf of the extension.
+- (circup) dedicated library view GUI in the Explorer tab area that:
+   - Shows libraries
 - {How far can we push this - can the WASM build handle extension/application logic in concert with VS Code's UI?}
 - Open editors must be able to spawn 'connected' REPL windows [uses the splitBelow API to create a webviewPanel] to connect to a board - virtual or physical - that is workspace-aware and can read/execute the editor's contents. The same webviewPanel can add a plotter tab for visual data output. {We're essentially re-implementing the custom editor, but this time we only need to create/manage the webviewPanels; can we use something like micro-repl or circuitpython-repl-js to handle the setup/connection - naturally the extension handles any serialport management and we have our virtual fallback(?)} The plotter tab will likely use the open or createNewPanel.right, or similar
 - To tie everything together, the main REPL and the editor+REPL need to be able to coordinate. My vision is that the editor's code can 'import tof from mu_repl' or 'import sensor.tof from mu_repl' so that the editor code can read data sent - in this case as tof distance data - from the main REPL webview. For its part, the main REPL will need a secondary tab to provide a web-based UI for: triggering button presses, sending pins high/low, sending/live adjusting analog pin data or sensor data [sliders with customizable range input entry boxes], providing LED representations [blinking and color reproduction]. The main REPL should be able to import the correct library to use for functionality beyond basic board interaction. {The ultimate would be if we can also mimic the register data/use the CONST data item sometimes found in libraries for our debugging. If we can leverage the higher power of the host machine to shadow the registry values of the microcontroller, and use the WASM-Node build to generate the sensor CONST registers, I think this would be a powerful tool for prototyping/rapid proof-of-concept/debugging. This register feature is the lowest priority, however}
@@ -30,7 +29,6 @@
 - Centralized device detector?
 - Centralized circup functionality? (How are we tracking installed libraries, and should we have a config entry for them?)
 - Versioning/updates for our wasm/runtimes?
-- 
 
 
 ## CONFIGURATION AND SETTINGS EXPOSURE
@@ -158,7 +156,8 @@
 
   Create a single coordination layer:
 
-  interface IRuntimeCoordinator {
+   /sys/unifiedRuntime.ts
+   interface MuTwoRuntimeCoordinator {
     // Single registry for all runtimes
     registerRuntime(runtime: IPythonRuntime): void;
     getActiveRuntimes(): Map<PythonRuntimeType, IPythonRuntime>;
@@ -196,6 +195,34 @@
     getDeviceRuntime(deviceId: string): IPythonRuntime | null;
   }
 
+  // user suggestion:
+  Phase 4: Runtime-Agnostic Services
+
+  // Provide Mu Two CLI/shell
+  interface MuTwoPseudoterminal {
+    // Coordinate with xterm.js instance to provide consistent UX irrespective
+    // of current runtime, and to centralize access to extension context, services, 
+    // commands, and resources common to all runtimes
+    // Focus is on main REPL UI; runtime differences should be invisible to the user,
+    // with the exception of specific data or commands. The REPL should, when initialized
+    // give the minimal text appearance of connecting to a Python REPL or CircuitPython
+    // serial console
+  }
+
+  // Access services independent of runtime
+  interface IRuntimeService {
+    callTaskRunner(manager: ExecutionManager, service: pip | circup, runtime: IPythonRuntime): Promise<boolean>    
+  }
+
+Phase 4 resources and model examples:
+https://github.com/adafruit/circuitpython-repl-js
+https://github.com/tj/commander.js
+https://github.com/oclif/oclif
+https://github.com/SBoudrias/Inquirer.js
+https://github.com/chalk/chalk
+https://github.com/circuitpython/web-editor
+https://github.com/WebReflection/micro-repl
+
   Specific Benefits of Improved Coordination:
 
   ✅ Simplified Runtime Switching
@@ -224,5 +251,110 @@
   2. 🟡 Medium Priority: Separate device connection from runtime selection logic
   3. 🟢 Low Priority: Optimize hardware abstraction sharing and resource management
 
-  This coordination improvement would maintain the current multi-runtime capability while eliminating the complexity and inconsistencies in the
-  current architecture.
+  This coordination improvement would maintain the current multi-runtime capability while eliminating the complexity and inconsistencies in the current architecture.
+
+## CODEBASE TODO COMMENTS AUDIT
+
+**Generated**: 22 September 2025 by Claude Code
+**Total Items Found**: ~34 TODO/FIXME items across the codebase (1 completed, 1 external)
+
+### **📋 Extension Core (`src/extension.ts`)**
+- **Line 12**: TODO: Revise import signatures to reflect proper priorities - order driven by external realities
+- **Line 32**: TODO: Check if replView panel is visible to determine if Provider needs immediate initialization
+- **Line 51**: TODO: Find cleaner way than 'export let' statements for TypeScript/ESLint compliance
+- **Line 171**: TODO: Open documentation about Python environment setup
+- **Line 174**: TODO: Add command to retry Python environment setup
+- **Line 1946**: TODO: Implement proper Python environment retry logic
+- **Line 1972**: TODO: Show detailed logs or output channel
+- **Line 1981**: TODO: File is nearly 1000 lines - consider refactoring into smaller modules under `/src/sys/`
+
+### **🗂️ Workspace Management (`src/workspace/`)**
+- **workspace.ts:110**: TODO: Check for workspace config file
+- **workspace.ts:259**: TODO: Standardize method to use workspaceUri; can include string path if needed
+
+### **📚 Library & Integration Management (`src/workspace/integration/`)**
+- **libraryManager.ts:24**: TODO: Consider pyproject.toml for user-facing metadata vs JSON for internal use
+- **libraryManager.ts:47**: TODO: Add logic to differentiate custom/modified libraries
+- **libraryManager.ts:48**: TODO: Consider different file schemes for Adafruit/CircuitPython sources
+- **libraryManager.ts:100**: TODO: Use existing tools like 'circup' or 'pip' for library syncing and tracking
+- **learnGuideProvider.ts:7**: TODO: Consume Adafruit Learn Guides directly from GitHub repo for offline viewing
+
+### **🔧 System Components (`src/sys/`)**
+- **fileSystemProvider.ts:15**: TODO: Migrate to 'mutwo://' URI scheme
+- **fileSystemProvider.ts:19**: TODO: Use VS Code API 'fire soon' instead of custom timer
+- **taskRunner.ts:136**: TODO: Use task/shell script with Python/pip writing JSON files instead of spawning processes
+- **extensionStateManager.ts:25**: TODO: Add flag for Python venv activation status
+- **extensionStateManager.ts:296**: TODO: Show user-friendly warning with suggestion to fix
+- **extensionStateManager.ts:304**: TODO: Open documentation about Python environment setup
+- **extensionStateManager.ts:307**: TODO: Trigger Python environment setup retry
+
+### **🎮 Device & Hardware (`src/devices/`)**
+- **protocols/debugAdapter.ts:225**: TODO: Log/read ticks from hardware to help match chronology
+- **core/client.ts:116**: TODO: Get default board from device detection
+- **core/client.ts:272**: TODO: Map proper completion item kinds
+- **core/client.ts:294**: TODO: Implement actual device communication through DeviceManager
+- **core/client.ts:309**: TODO: Implement binary data reception from device
+- **core/client.ts:333**: TODO: Add method to DeviceManager for initiating connections
+
+### **🔌 Providers & Language Services (`src/providers/`)**
+- **editorPanelProvider.ts:40**: TODO: Get default board from configuration
+- **replViewProvider.ts:67**: TODO: Get default board from device detection
+- **webviewPanelProvider.ts:17**: Reference to MU-TODO.md for connected REPL windows feature
+- **language/core/LanguageServiceBridge.ts:564**: TODO: Get version from package.json
+- **language/core/LanguageServiceBridge.ts:666**: TODO: Implement raw data sending to device
+- **language/core/LanguageServiceBridge.ts:708**: TODO: Add clear method to TerminalHistoryManager if not exists
+
+### **🎯 Helper Components (`src/providers/helpers/`)**
+- **boardDetectionHelper.ts:5**: Reference to MU-TODO.md line 15 for board detection logic
+- **boardDetectionHelper.ts:82**: TODO: Implement smarter workspace selection based on active editor
+- **replSessionHelper.ts:83**: TODO: Connect WASM runtime to session
+- **replSessionHelper.ts:98**: TODO: Connect to physical device via existing device manager
+- **replSessionHelper.ts:149**: TODO: Execute code in WASM runtime
+- **replSessionHelper.ts:170**: TODO: Execute code on physical device
+
+### **🌐 WebView Components (`views/`)**
+- **webview-repl/src/WasmReplUI.tsx:69**: TODO: Implement PyScript support
+
+### **🔍 TODO Completion Status Analysis**
+
+**Generated**: 22 September 2025 by Claude Code Agent Analysis
+**Status**: 1 item completed, 32 items still active, 1 obsolete, 1 reference
+
+**✅ COMPLETED (1 item)**
+- WasmRuntimeManager dispose method - ✅ Implemented and TODO comments removed
+
+**❌ OBSOLETE (1 item)**
+- CSS composition position (xterm.css) - External library TODO, not our responsibility
+
+**📍 CURRENTLY ACTIVE (32 items)**
+The following TODOs represent genuine development work still needed:
+
+### **📈 Priority Assessment**
+
+**🔴 High Priority (Core Functionality)**
+1. Device communication implementation (`src/devices/core/client.ts`)
+2. Python environment setup and retry logic (`src/extension.ts`, `src/sys/extensionStateManager.ts`)
+3. WASM runtime integration (`src/providers/helpers/replSessionHelper.ts`)
+4. Board detection and workspace association (`src/providers/helpers/boardDetectionHelper.ts`)
+
+**🟡 Medium Priority (Developer Experience)**
+1. Extension architecture refactoring (`src/extension.ts` - reduce file size)
+2. File system provider URI scheme migration (`src/sys/fileSystemProvider.ts`)
+3. Library management tool integration (`src/workspace/integration/libraryManager.ts`)
+4. Configuration management improvements (`src/providers/`)
+
+**🟢 Low Priority (Polish & Documentation)**
+1. Version management from package.json (`src/providers/language/core/LanguageServiceBridge.ts`)
+2. User documentation links (`src/extension.ts`, `src/sys/extensionStateManager.ts`)
+3. CSS composition fixes (`views/webview-repl/src/xterm.css`)
+4. PyScript support (`views/webview-repl/src/WasmReplUI.tsx`)
+
+### **✅ Potentially Completed Items**
+Some TODOs may already be addressed but comments weren't removed - audit needed to verify completion status.
+
+### **📝 Recommended Next Steps**
+1. **Audit completion status** - Review each TODO to determine if already implemented
+2. **Prioritize device communication** - Core REPL functionality depends on this
+3. **Address Python environment issues** - Critical for extension stability
+4. **Refactor extension.ts** - Break into smaller, manageable modules
+5. **Update documentation links** - Ensure all help links point to valid resources

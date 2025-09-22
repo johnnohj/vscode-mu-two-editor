@@ -7,7 +7,7 @@
 
 import { EventEmitter } from 'events';
 import * as vscode from 'vscode';
-import * as path from 'path';
+// import * as path from 'path'; // Migrated to VS Code URI-based path handling
 import {
     IPythonRuntime,
     IRuntimeFactory,
@@ -131,7 +131,7 @@ export class RuntimeFactory implements IRuntimeFactory {
                     ...baseConfig,
                     type: 'circuitpython',
                     version: '8.2.6',
-                    wasmPath: path.join(__dirname, '../public/bin/wasm-runtime-worker.mjs'),
+                    wasmPath: vscode.Uri.joinPath(vscode.Uri.file(__dirname), '../public/bin/wasm-runtime-worker.mjs').fsPath,
                     memoryLimit: 512 * 1024 // 512KB for WASM
                 };
 

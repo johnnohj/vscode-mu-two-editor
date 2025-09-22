@@ -24,8 +24,15 @@
 */
 // Import necessary modules
 import * as vscode from 'vscode';
+import { getLogger } from './sys/unifiedLogger';
 import { MuDeviceDetector, IDevice } from './devices/core/deviceDetector';
 import { ExtensionStateManager } from './sys/extensionStateManager';
+import { MuTwoRuntimeCoordinator } from './sys/unifiedRuntimeCoordinator';
+import { DeviceConnectionManager } from './sys/deviceConnectionManager';
+import { HardwareAbstractionRegistry } from './sys/hardwareAbstractionRegistry';
+import { PureDeviceManager } from './sys/pureDeviceManager';
+import { RuntimeBinder } from './sys/runtimeBinder';
+import { ExecutionManager } from './sys/executionManager';
 import { registerService } from './sys/serviceRegistry';
 import { PythonEnvManager } from './sys/pythonEnvManager';
 // TODO: Perhaps we can perform a quick 'isVisible' check on the replView panel to see if 
@@ -51,8 +58,9 @@ import { FileSaveTwiceHandler } from './workspace/filesystem/saveTwiceHandler';
 	accomplishing the intended purpose by now, which was to prevent annoying eslint/TS typing/etc. 
 	errors. -john 
 */
-	
+
 // Global state
+const logger = getLogger();
 let stateManager: ExtensionStateManager;
 let boardManager: BoardManager;
 let statusBarItem: vscode.StatusBarItem;
@@ -60,6 +68,12 @@ let statusBarItem: vscode.StatusBarItem;
 // Core services (always available)
 export let deviceManager: DeviceManager;
 export let languageClient: MuTwoLanguageClient;
+export let runtimeCoordinator: MuTwoRuntimeCoordinator;
+export let deviceConnectionManager: DeviceConnectionManager;
+export let hardwareRegistry: HardwareAbstractionRegistry;
+export let pureDeviceManager: PureDeviceManager;
+export let runtimeBinder: RuntimeBinder;
+export let executionManager: ExecutionManager;
 export let webviewViewProvider: ReplViewProvider;
 export let editorPanelProvider: EditorPanelProvider;
 export let webviewPanelProvider: EditorReplPanelProvider;
@@ -76,7 +90,7 @@ export let saveTwiceHandler: FileSaveTwiceHandler | null = null;
  * Clean, predictable extension activation
  */
 export async function activate(context: vscode.ExtensionContext) {
-    console.log('Mu 2 Extension: Starting activation...');
+    logger.info('EXTENSION', 'Mu 2 Extension: Starting activation...');
     
     try {
         // Step 1: Initialize core infrastructure
@@ -102,10 +116,10 @@ export async function activate(context: vscode.ExtensionContext) {
         await vscode.commands.executeCommand('setContext', 'muTwo.Workspace.isOpen', true);
         await vscode.commands.executeCommand('setContext', 'muTwo.fullyActivated', true);
 
-        console.log('Mu 2 Extension: Activation completed successfully');
+        logger.info('EXTENSION', 'Mu 2 Extension: Activation completed successfully');
         
     } catch (error) {
-        console.error('Mu 2 Extension: Activation failed:', error);
+        logger.error('EXTENSION', 'Mu 2 Extension: Activation failed:', error);
         vscode.window.showErrorMessage(`Mu 2 Extension failed to activate: ${error}`);
         throw error;
     }
@@ -116,17 +130,17 @@ export async function activate(context: vscode.ExtensionContext) {
  * This always succeeds - no external dependencies
  */
 function initializeCore(context: vscode.ExtensionContext): void {
-    console.log('Initializing core infrastructure...');
+    logger.info('EXTENSION', 'Initializing core infrastructure...');
     
     // Initialize state management
     stateManager = ExtensionStateManager.getInstance(context);
     
     // Create required directories (non-blocking)
     createDirectories(context).catch(error => {
-        console.warn('Failed to create directories:', error);
+        logger.warn('EXTENSION', 'Failed to create directories:', error);
     });
     
-    console.log('Core infrastructure initialized');
+    logger.info('EXTENSION', 'Core infrastructure initialized');
 }
 
 /**
@@ -134,12 +148,12 @@ function initializeCore(context: vscode.ExtensionContext): void {
  * These are required for basic functionality
  */
 async function initializeEssentialServices(context: vscode.ExtensionContext): Promise<void> {
-    console.log('Initializing essential services...');
+    logger.info('EXTENSION', 'Initializing essential services...');
     
     // Initialize Python environment manager first to ensure venv activation
     // This prevents interference with other Python-dependent services
     try {
-        console.log('Initializing Python environment (venv activation)...');
+        logger.info('EXTENSION', 'Initializing Python environment (venv activation)...');
         pythonEnvManager = new PythonEnvManager(context);
         await pythonEnvManager.initialize();
         
@@ -147,14 +161,14 @@ async function initializeEssentialServices(context: vscode.ExtensionContext): Pr
         const venvPath = pythonEnvManager.getCurrentPythonPath();
         if (venvPath) {
             stateManager.setPythonVenvActivated(venvPath);
-            console.log('Python environment initialized successfully');
+            logger.info('EXTENSION', 'Python environment initialized successfully');
         } else {
             throw new Error('PythonEnvManager initialized but no valid Python path available');
         }
         
         stateManager.setComponent('pythonEnvManager', pythonEnvManager);
     } catch (error) {
-        console.warn('Python environment initialization failed (extension will continue):', error);
+        logger.warn('EXTENSION', 'Python environment initialization failed (extension will continue):', error);
         
         // Mark venv as failed in state manager
         stateManager.setPythonVenvFailed(error instanceof Error ? error.message : String(error));
@@ -177,15 +191,170 @@ async function initializeEssentialServices(context: vscode.ExtensionContext): Pr
         // Continue without Python env - not critical for core functionality
         pythonEnvManager = null;
     }
-    
+
+    // Initialize unified runtime coordinator after Python environment
+    try {
+        logger.info('EXTENSION', 'Initializing unified runtime coordinator...');
+        runtimeCoordinator = MuTwoRuntimeCoordinator.getInstance(context);
+        await runtimeCoordinator.initialize();
+
+        stateManager.setComponent('runtimeCoordinator', runtimeCoordinator);
+        registerService('runtimeCoordinator', runtimeCoordinator);
+
+        // Register coordinator disposal with VS Code's context subscriptions
+        context.subscriptions.push({
+            dispose: async () => {
+                logger.info('EXTENSION', 'Disposing unified runtime coordinator...');
+                try {
+                    await runtimeCoordinator.dispose();
+                    logger.info('EXTENSION', 'Runtime coordinator disposed successfully');
+                } catch (error) {
+                    logger.error('EXTENSION', `Error disposing runtime coordinator: ${error}`);
+                }
+            }
+        });
+
+        logger.info('EXTENSION', 'Unified runtime coordinator initialized successfully');
+    } catch (error) {
+        logger.error('EXTENSION', 'Failed to initialize runtime coordinator:', error);
+        // This is critical - runtime coordination is essential for core functionality
+        throw new Error(`Runtime coordinator initialization failed: ${error}`);
+    }
+
+    // Initialize Phase 2 - Device Connection Manager
+    try {
+        logger.info('EXTENSION', 'Initializing device connection manager...');
+        deviceConnectionManager = DeviceConnectionManager.getInstance(context);
+        await deviceConnectionManager.initialize();
+
+        stateManager.setComponent('deviceConnectionManager', deviceConnectionManager);
+        registerService('deviceConnectionManager', deviceConnectionManager);
+
+        // Register disposal with VS Code's context subscriptions
+        context.subscriptions.push({
+            dispose: async () => {
+                logger.info('EXTENSION', 'Disposing device connection manager...');
+                try {
+                    await deviceConnectionManager.dispose();
+                    logger.info('EXTENSION', 'Device connection manager disposed successfully');
+                } catch (error) {
+                    logger.error('EXTENSION', `Error disposing device connection manager: ${error}`);
+                }
+            }
+        });
+
+        logger.info('EXTENSION', 'Device connection manager initialized successfully');
+    } catch (error) {
+        logger.error('EXTENSION', 'Failed to initialize device connection manager:', error);
+        // Not critical - continue without dedicated connection management
+    }
+
+    // Initialize Phase 2 - Hardware Abstraction Registry
+    try {
+        logger.info('EXTENSION', 'Initializing hardware abstraction registry...');
+        hardwareRegistry = HardwareAbstractionRegistry.getInstance();
+
+        stateManager.setComponent('hardwareRegistry', hardwareRegistry);
+        registerService('hardwareRegistry', hardwareRegistry);
+
+        logger.info('EXTENSION', 'Hardware abstraction registry initialized successfully');
+    } catch (error) {
+        logger.error('EXTENSION', 'Failed to initialize hardware abstraction registry:', error);
+        // Not critical - continue without centralized hardware state
+    }
+
+    // Initialize Phase 3 - Pure Device Manager
+    try {
+        logger.info('EXTENSION', 'Initializing pure device manager...');
+        pureDeviceManager = PureDeviceManager.getInstance(context);
+        await pureDeviceManager.initialize();
+
+        stateManager.setComponent('pureDeviceManager', pureDeviceManager);
+        registerService('pureDeviceManager', pureDeviceManager);
+
+        // Register disposal with VS Code's context subscriptions
+        context.subscriptions.push({
+            dispose: async () => {
+                logger.info('EXTENSION', 'Disposing pure device manager...');
+                try {
+                    await pureDeviceManager.dispose();
+                    logger.info('EXTENSION', 'Pure device manager disposed successfully');
+                } catch (error) {
+                    logger.error('EXTENSION', `Error disposing pure device manager: ${error}`);
+                }
+            }
+        });
+
+        logger.info('EXTENSION', 'Pure device manager initialized successfully');
+    } catch (error) {
+        logger.error('EXTENSION', 'Failed to initialize pure device manager:', error);
+        // Not critical - continue without runtime-agnostic device management
+    }
+
+    // Initialize Phase 3 - Runtime Binder
+    try {
+        logger.info('EXTENSION', 'Initializing runtime binder...');
+        runtimeBinder = RuntimeBinder.getInstance();
+        await runtimeBinder.initialize();
+
+        stateManager.setComponent('runtimeBinder', runtimeBinder);
+        registerService('runtimeBinder', runtimeBinder);
+
+        // Register disposal with VS Code's context subscriptions
+        context.subscriptions.push({
+            dispose: async () => {
+                logger.info('EXTENSION', 'Disposing runtime binder...');
+                try {
+                    await runtimeBinder.dispose();
+                    logger.info('EXTENSION', 'Runtime binder disposed successfully');
+                } catch (error) {
+                    logger.error('EXTENSION', `Error disposing runtime binder: ${error}`);
+                }
+            }
+        });
+
+        logger.info('EXTENSION', 'Runtime binder initialized successfully');
+    } catch (error) {
+        logger.error('EXTENSION', 'Failed to initialize runtime binder:', error);
+        // Not critical - continue without separate runtime binding
+    }
+
+    // Initialize Phase 3 - Execution Manager (requires runtime binder)
+    try {
+        logger.info('EXTENSION', 'Initializing execution manager...');
+        executionManager = ExecutionManager.getInstance();
+        await executionManager.initialize();
+
+        stateManager.setComponent('executionManager', executionManager);
+        registerService('executionManager', executionManager);
+
+        // Register disposal with VS Code's context subscriptions
+        context.subscriptions.push({
+            dispose: async () => {
+                logger.info('EXTENSION', 'Disposing execution manager...');
+                try {
+                    await executionManager.dispose();
+                    logger.info('EXTENSION', 'Execution manager disposed successfully');
+                } catch (error) {
+                    logger.error('EXTENSION', `Error disposing execution manager: ${error}`);
+                }
+            }
+        });
+
+        logger.info('EXTENSION', 'Execution manager initialized successfully');
+    } catch (error) {
+        logger.error('EXTENSION', 'Failed to initialize execution manager:', error);
+        // Not critical - continue without runtime-agnostic execution
+    }
+
     // Initialize device manager with error handling
     try {
         deviceManager = new DeviceManager(context);
         stateManager.setComponent('deviceManager', deviceManager);
         registerService('deviceManager', deviceManager);
-        console.log('Device manager initialized successfully');
+        logger.info('EXTENSION', 'Device manager initialized successfully');
     } catch (error) {
-        console.error('Failed to initialize device manager:', error);
+        logger.error('EXTENSION', 'Failed to initialize device manager:', error);
         // Continue with null device manager - providers will handle gracefully
         deviceManager = null as any;
     }
@@ -195,9 +364,9 @@ async function initializeEssentialServices(context: vscode.ExtensionContext): Pr
         languageClient = new MuTwoLanguageClient(context);
         stateManager.setComponent('languageClient', languageClient);
         registerService('languageClient', languageClient);
-        console.log('Language client initialized successfully');
+        logger.info('EXTENSION', 'Language client initialized successfully');
     } catch (error) {
-        console.error('Failed to initialize language client:', error);
+        logger.error('EXTENSION', 'Failed to initialize language client:', error);
         // Continue with null language client - providers will handle gracefully
         languageClient = null as any;
     }
@@ -206,9 +375,9 @@ async function initializeEssentialServices(context: vscode.ExtensionContext): Pr
     try {
         deviceDetector = new MuDeviceDetector();
         stateManager.setComponent('deviceDetector', deviceDetector);
-        console.log('Device detector initialized successfully');
+        logger.info('EXTENSION', 'Device detector initialized successfully');
     } catch (error) {
-        console.error('Failed to initialize device detector:', error);
+        logger.error('EXTENSION', 'Failed to initialize device detector:', error);
         // Continue with null device detector - board manager will handle gracefully
         deviceDetector = null as any;
     }
@@ -216,25 +385,25 @@ async function initializeEssentialServices(context: vscode.ExtensionContext): Pr
     // Start LSP in background - don't wait or fail on errors
     if (languageClient) {
         languageClient.start().then(() => {
-            console.log('Language server started successfully');
+            logger.info('EXTENSION', 'Language server started successfully');
         }).catch(error => {
-            console.log('Language server startup failed (continuing without LSP):', error);
+            logger.info('EXTENSION', 'Language server startup failed (continuing without LSP):', error);
         });
     }
     
-    console.log('Essential services initialized');
+    logger.info('EXTENSION', 'Essential services initialized');
 }
 
 /**
  * Initialize BoardManager as the primary device management system
  */
 async function initializeBoardManager(context: vscode.ExtensionContext): Promise<void> {
-    console.log('Initializing BoardManager as primary device system...');
+    logger.info('EXTENSION', 'Initializing BoardManager as primary device system...');
     
     try {
         // Check if required dependencies are available
         if (!deviceManager || !languageClient || !deviceDetector) {
-            console.warn('Some required services for BoardManager not available, skipping BoardManager initialization');
+            logger.warn('EXTENSION', 'Some required services for BoardManager not available, skipping BoardManager initialization');
             return;
         }
 
@@ -263,10 +432,10 @@ async function initializeBoardManager(context: vscode.ExtensionContext): Promise
         // Initialize board detection
         await boardManager.initialize();
 
-        console.log('BoardManager initialized successfully');
+        logger.info('EXTENSION', 'BoardManager initialized successfully');
 
     } catch (error) {
-        console.error('BoardManager initialization failed:', error);
+        logger.error('EXTENSION', 'BoardManager initialization failed:', error);
         // Don't throw - continue with limited functionality
         boardManager = null as any;
     }
@@ -274,19 +443,19 @@ async function initializeBoardManager(context: vscode.ExtensionContext): Promise
 
 function setupBoardEventHandlers(): void {
     boardManager.onBoardAdded((board) => {
-        console.log(`Board added: ${board.name} (${board.type})`);
+        logger.info('EXTENSION', `Board added: ${board.name} (${board.type})`);
         updateStatusBar();
         notifyWebviewsOfBoardChange();
     });
     
     boardManager.onBoardRemoved((board) => {
-        console.log(`Board removed: ${board.name}`);
+        logger.info('EXTENSION', `Board removed: ${board.name}`);
         updateStatusBar();
         notifyWebviewsOfBoardChange();
     });
     
     boardManager.onBoardConnectionChanged(({ board, state }) => {
-        console.log(`Board ${board.name} connection changed:`, state);
+        logger.info('EXTENSION', `Board ${board.name} connection changed:`, state);
         updateStatusBar();
         notifyWebviewsOfBoardChange();
     });
@@ -346,7 +515,7 @@ function notifyWebviewsOfBoardChange(): void {
  * Always succeeds - creates providers but doesn't connect to devices
  */
 function registerUIComponents(context: vscode.ExtensionContext): void {
-    console.log('Registering UI components...');
+    logger.info('EXTENSION', 'Registering UI components...');
     
     // Create REPL webview provider
     webviewViewProvider = new ReplViewProvider(context.extensionUri, context);
@@ -366,17 +535,17 @@ function registerUIComponents(context: vscode.ExtensionContext): void {
     stateManager.setComponent('editorPanelProvider', editorPanelProvider);
 
     // EditorPanelProvider now handles simple split functionality
-    console.log('Editor panel provider created for split view functionality');
+    logger.info('EXTENSION', 'Editor panel provider created for split view functionality');
 
     // Create webview panel provider for connected REPLs
     webviewPanelProvider = new EditorReplPanelProvider(context);
     stateManager.setComponent('webviewPanelProvider', webviewPanelProvider);
-    console.log('Webview panel provider created for connected REPL functionality');
+    logger.info('EXTENSION', 'Webview panel provider created for connected REPL functionality');
 
     // Register CircuitPython language features for standard Python editors
     registerCircuitPythonLanguageFeatures(context);
     
-    console.log('UI components registered');
+    logger.info('EXTENSION', 'UI components registered');
 }
 
 /**
@@ -384,7 +553,7 @@ function registerUIComponents(context: vscode.ExtensionContext): void {
  * Always succeeds - commands handle their own error cases
  */
 function registerCommands(context: vscode.ExtensionContext): void {
-    console.log('Registering commands...');
+    logger.info('EXTENSION', 'Registering commands...');
     
     // Core REPL commands
     context.subscriptions.push(
@@ -491,38 +660,38 @@ function registerCommands(context: vscode.ExtensionContext): void {
     // Show/Hide Connected REPL Header commands
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.editor.showHeader', () => {
-            console.log('muTwo.editor.showHeader command triggered');
+            logger.info('EXTENSION', 'muTwo.editor.showHeader command triggered');
 
             if (webviewPanelProvider) {
                 const activePanels = webviewPanelProvider.getActivePanels();
                 if (activePanels.length > 0) {
-                    console.log('Calling showHeader on first active panel');
+                    logger.info('EXTENSION', 'Calling showHeader on first active panel');
                     // Show header for the first active REPL panel
                     activePanels[0].showHeader();
                 } else {
-                    console.log('No active REPL panels found');
+                    logger.info('EXTENSION', 'No active REPL panels found');
                 }
             } else {
-                console.log('webviewPanelProvider not available');
+                logger.info('EXTENSION', 'webviewPanelProvider not available');
             }
         })
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.editor.hideHeader', () => {
-            console.log('muTwo.editor.hideHeader command triggered');
+            logger.info('EXTENSION', 'muTwo.editor.hideHeader command triggered');
 
             if (webviewPanelProvider) {
                 const activePanels = webviewPanelProvider.getActivePanels();
                 if (activePanels.length > 0) {
-                    console.log('Calling hideHeader on first active panel');
+                    logger.info('EXTENSION', 'Calling hideHeader on first active panel');
                     // Hide header for the first active REPL panel
                     activePanels[0].hideHeader();
                 } else {
-                    console.log('No active REPL panels found');
+                    logger.info('EXTENSION', 'No active REPL panels found');
                 }
             } else {
-                console.log('webviewPanelProvider not available');
+                logger.info('EXTENSION', 'webviewPanelProvider not available');
             }
         })
     );
@@ -531,11 +700,11 @@ function registerCommands(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.debug.checkContext', () => {
             const activeEditor = vscode.window.activeTextEditor;
-            console.log('=== CONTEXT DEBUG ===');
-            console.log('Active editor:', activeEditor?.document.fileName);
-            console.log('Language ID:', activeEditor?.document.languageId);
-            console.log('WebviewPanelProvider exists:', !!webviewPanelProvider);
-            console.log('Active panels:', webviewPanelProvider ? Array.from(webviewPanelProvider.getActivePanels().map(p => p.constructor.name)) : 'none');
+            logger.info('EXTENSION', '=== CONTEXT DEBUG ===');
+            logger.info('EXTENSION', 'Active editor:', activeEditor?.document.fileName);
+            logger.info('EXTENSION', 'Language ID:', activeEditor?.document.languageId);
+            logger.info('EXTENSION', 'WebviewPanelProvider exists:', !!webviewPanelProvider);
+            logger.info('EXTENSION', 'Active panels:', webviewPanelProvider ? Array.from(webviewPanelProvider.getActivePanels().map(p => p.constructor.name)) : 'none');
             vscode.window.showInformationMessage('Check console for context debug info');
         })
     );
@@ -575,7 +744,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
     // Editor commands - now opens standard text editor with workspace-aware REPL panel
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.editor.openEditor', async (uri?: vscode.Uri) => {
-            console.log('muTwo.editor.openEditor command called with URI:', uri?.toString());
+            logger.info('EXTENSION', 'muTwo.editor.openEditor command called with URI:', uri?.toString());
 
             let document: vscode.TextDocument;
 
@@ -602,7 +771,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
             // Split the editor vertically for workspace view
             await editorPanelProvider.createOrShowPanel();
 
-            console.log('Opened Python file in standard editor with vertical split');
+            logger.info('EXTENSION', 'Opened Python file in standard editor with vertical split');
         })
     );
 
@@ -635,7 +804,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
                 return;
             }
 
-            console.log(`=== Testing: ${selected} ===`);
+            logger.info('EXTENSION', `=== Testing: ${selected} ===`);
 
             try {
                 let panel: vscode.WebviewPanel;
@@ -677,20 +846,20 @@ function registerCommands(context: vscode.ExtensionContext): void {
 
                 vscode.window.showInformationMessage(`${selected} test completed`);
             } catch (error) {
-                console.error(`Test failed:`, error);
+                logger.error('EXTENSION', `Test failed:`, error);
                 vscode.window.showErrorMessage(`${selected} test failed: ${error}`);
             }
         })
     );
 
-    console.log('Commands registered');
+    logger.info('EXTENSION', 'Commands registered');
 }
 
 /**
  * Register CircuitPython language features for standard Python editors
  */
 function registerCircuitPythonLanguageFeatures(context: vscode.ExtensionContext): void {
-    console.log('Registering CircuitPython language features for Python files...');
+    logger.info('EXTENSION', 'Registering CircuitPython language features for Python files...');
 
     const pythonSelector: vscode.DocumentSelector = { language: 'python' };
 
@@ -753,7 +922,7 @@ function registerCircuitPythonLanguageFeatures(context: vscode.ExtensionContext)
         })
     );
 
-    console.log('CircuitPython language features registered successfully');
+    logger.info('EXTENSION', 'CircuitPython language features registered successfully');
 }
 
 /**
@@ -764,7 +933,7 @@ function getModuleRegistry(): any {
         const { moduleRegistry } = require('./providers/language/core/ModuleRegistry');
         return moduleRegistry;
     } catch (error) {
-        console.warn('ModuleRegistry not available:', error);
+        logger.warn('EXTENSION', 'ModuleRegistry not available:', error);
         return null;
     }
 }
@@ -778,7 +947,7 @@ function getBoardDatabase(): any {
         const { moduleRegistry } = require('./providers/language/core/ModuleRegistry');
         return moduleRegistry; // ModuleRegistry includes board data
     } catch (error) {
-        console.warn('Board database not available:', error);
+        logger.warn('EXTENSION', 'Board database not available:', error);
         return null;
     }
 }
@@ -854,7 +1023,7 @@ class CircuitPythonCompletionProvider implements vscode.CompletionItemProvider {
             }
 
         } catch (error) {
-            console.error('Error in CircuitPython completion provider:', error);
+            logger.error('EXTENSION', 'Error in CircuitPython completion provider:', error);
         }
 
         return items;
@@ -973,7 +1142,7 @@ class CircuitPythonHoverProvider implements vscode.HoverProvider {
             }
 
         } catch (error) {
-            console.error('Error in CircuitPython hover provider:', error);
+            logger.error('EXTENSION', 'Error in CircuitPython hover provider:', error);
         }
 
         return undefined;
@@ -1018,7 +1187,7 @@ class CircuitPythonSignatureProvider implements vscode.SignatureHelpProvider {
                 }
             }
         } catch (error) {
-            console.error('Error in CircuitPython signature provider:', error);
+            logger.error('EXTENSION', 'Error in CircuitPython signature provider:', error);
         }
 
         return undefined;
@@ -1052,12 +1221,12 @@ class CircuitPythonDefinitionProvider implements vscode.DefinitionProvider {
                     // If module has online documentation, could open that
                     if (moduleInfo.documentationUrl) {
                         // For now, log the URL - could implement opening in browser
-                        console.log(`Documentation for ${word}: ${moduleInfo.documentationUrl}`);
+                        logger.info('EXTENSION', `Documentation for ${word}: ${moduleInfo.documentationUrl}`);
                     }
                 }
             }
         } catch (error) {
-            console.warn('Error in CircuitPython definition provider:', error);
+            logger.warn('EXTENSION', 'Error in CircuitPython definition provider:', error);
         }
 
         return undefined;
@@ -1218,18 +1387,18 @@ class CircuitPythonDiagnosticProvider {
 // Test functions for webview panel positioning
 
 async function testPureSplitDown(): Promise<void> {
-    console.log('Testing pure split editor down (no panels)');
+    logger.info('EXTENSION', 'Testing pure split editor down (no panels)');
 
     // Just split the editor to see what happens
     await vscode.commands.executeCommand('workbench.action.splitEditorDown');
 
     // Let's also try some other split-related commands to see what's available
-    console.log('Available after split:');
+    logger.info('EXTENSION', 'Available after split:');
 
     // Wait a bit then try to get info about the split
     setTimeout(async () => {
         const activeEditor = vscode.window.activeTextEditor;
-        console.log('Active editor after split:', {
+        logger.info('EXTENSION', 'Active editor after split:', {
             viewColumn: activeEditor?.viewColumn,
             document: activeEditor?.document.fileName,
             visibleRanges: activeEditor?.visibleRanges
@@ -1237,9 +1406,9 @@ async function testPureSplitDown(): Promise<void> {
 
         // Try to see if there are multiple visible editors now
         const visibleEditors = vscode.window.visibleTextEditors;
-        console.log('Visible editors count:', visibleEditors.length);
+        logger.info('EXTENSION', 'Visible editors count:', visibleEditors.length);
         visibleEditors.forEach((editor, i) => {
-            console.log(`Editor ${i}:`, {
+            logger.info('EXTENSION', `Editor ${i}:`, {
                 column: editor.viewColumn,
                 fileName: editor.document.fileName
             });
@@ -1257,13 +1426,13 @@ async function testPureSplitDown(): Promise<void> {
             'workbench.action.editorLayoutThreeColumns'
         ];
 
-        console.log('Available split commands to test:');
-        splitCommands.forEach(cmd => console.log(` - ${cmd}`));
+        logger.info('EXTENSION', 'Available split commands to test:');
+        splitCommands.forEach(cmd => logger.info('EXTENSION', ` - ${cmd}`));
     }, 500);
 }
 
 async function testSplitAndCreateInSplit(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
-    console.log('Testing split then create webview in the split area');
+    logger.info('EXTENSION', 'Testing split then create webview in the split area');
 
     // First split the editor
     await vscode.commands.executeCommand('workbench.action.splitEditorDown');
@@ -1281,12 +1450,12 @@ async function testSplitAndCreateInSplit(context: vscode.ExtensionContext): Prom
 
     panel.webview.html = `<h1>Split Target Test</h1><p>Created after splitting - should appear in split area</p>`;
 
-    console.log('Panel created in split area');
+    logger.info('EXTENSION', 'Panel created in split area');
     return panel;
 }
 
 async function testCreatePanelOnly(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
-    console.log('Testing: Create panel only, no split commands at all');
+    logger.info('EXTENSION', 'Testing: Create panel only, no split commands at all');
 
     const activeColumn = vscode.window.activeTextEditor?.viewColumn || vscode.ViewColumn.One;
 
@@ -1299,12 +1468,12 @@ async function testCreatePanelOnly(context: vscode.ExtensionContext): Promise<vs
 
     panel.webview.html = `<h1>Panel Only Test</h1><p>No split commands executed - should just create panel</p>`;
 
-    console.log('Panel created without any split commands');
+    logger.info('EXTENSION', 'Panel created without any split commands');
     return panel;
 }
 
 async function testCreatePanelThenSplit(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
-    console.log('Testing: Create panel first, then split after panel exists');
+    logger.info('EXTENSION', 'Testing: Create panel first, then split after panel exists');
 
     const activeColumn = vscode.window.activeTextEditor?.viewColumn || vscode.ViewColumn.One;
 
@@ -1320,12 +1489,12 @@ async function testCreatePanelThenSplit(context: vscode.ExtensionContext): Promi
 
     // Wait a moment, then split
     setTimeout(async () => {
-        console.log('Running split command after panel creation...');
+        logger.info('EXTENSION', 'Running split command after panel creation...');
         try {
             await vscode.commands.executeCommand('workbench.action.splitEditorDown');
-            console.log('Split command executed after panel creation');
+            logger.info('EXTENSION', 'Split command executed after panel creation');
         } catch (e) {
-            console.log('Split after panel creation failed:', e);
+            logger.info('EXTENSION', 'Split after panel creation failed:', e);
         }
     }, 300);
 
@@ -1333,7 +1502,7 @@ async function testCreatePanelThenSplit(context: vscode.ExtensionContext): Promi
 }
 
 async function testSplitAfterPanelCreation(context: vscode.ExtensionContext): Promise<vscode.WebviewPanel> {
-    console.log('Testing: Create panel, wait, then split specifically');
+    logger.info('EXTENSION', 'Testing: Create panel, wait, then split specifically');
 
     const activeColumn = vscode.window.activeTextEditor?.viewColumn || vscode.ViewColumn.One;
 
@@ -1348,12 +1517,12 @@ async function testSplitAfterPanelCreation(context: vscode.ExtensionContext): Pr
 
     // Wait longer, then split
     setTimeout(async () => {
-        console.log('About to split after panel is fully created...');
+        logger.info('EXTENSION', 'About to split after panel is fully created...');
         try {
             await vscode.commands.executeCommand('workbench.action.splitEditorDown');
-            console.log('Split executed successfully after panel creation');
+            logger.info('EXTENSION', 'Split executed successfully after panel creation');
         } catch (e) {
-            console.log('Split after panel failed:', e);
+            logger.info('EXTENSION', 'Split after panel failed:', e);
         }
     }, 1000);
 
@@ -1377,7 +1546,7 @@ async function testBasicBelowSplit(context: vscode.ExtensionContext): Promise<vs
         try {
             await vscode.commands.executeCommand('workbench.action.splitEditorDown');
         } catch (e) {
-            console.log('splitEditorDown failed:', e);
+            logger.info('EXTENSION', 'splitEditorDown failed:', e);
         }
     }, 100);
 
@@ -1429,7 +1598,7 @@ async function testMoveToBelow(context: vscode.ExtensionContext): Promise<vscode
         try {
             await vscode.commands.executeCommand('workbench.action.moveEditorToBelowGroup');
         } catch (e) {
-            console.log('moveEditorToBelowGroup failed:', e);
+            logger.info('EXTENSION', 'moveEditorToBelowGroup failed:', e);
         }
     }, 100);
 
@@ -1453,7 +1622,7 @@ async function testViewColumnTwo(context: vscode.ExtensionContext): Promise<vsco
  * These are loaded on first use
  */
 function setupLazyLoading(context: vscode.ExtensionContext): void {
-    console.log('Setting up lazy loading...');
+    logger.info('EXTENSION', 'Setting up lazy loading...');
     
     // Python environment manager - loaded when first accessed
     // (Used by editor features and Blinka)
@@ -1464,7 +1633,7 @@ function setupLazyLoading(context: vscode.ExtensionContext): void {
     // Workspace manager - loaded when workspace commands are used
     // (Used for workspace management)
     
-    console.log('Lazy loading configured');
+    logger.info('EXTENSION', 'Lazy loading configured');
 }
 
 /**
@@ -1472,7 +1641,7 @@ function setupLazyLoading(context: vscode.ExtensionContext): void {
  */
 export function getPythonEnvManager(): PythonEnvManager | null {
     if (!pythonEnvManager) {
-        console.warn('PythonEnvManager not available - initialization may have failed during activation');
+        logger.warn('EXTENSION', 'PythonEnvManager not available - initialization may have failed during activation');
     }
     return pythonEnvManager;
 }
@@ -1482,7 +1651,7 @@ export function getPythonEnvManager(): PythonEnvManager | null {
  */
 export async function getFileSystemProvider(context: vscode.ExtensionContext): Promise<CtpyFileSystemProvider> {
     if (!fileSystemProvider) {
-        console.log('Lazy-loading scoped file system provider...');
+        logger.info('EXTENSION', 'Lazy-loading scoped file system provider...');
         fileSystemProvider = new CtpyFileSystemProvider();
         stateManager.setComponent('fileSystemProvider', fileSystemProvider);
         
@@ -1497,7 +1666,7 @@ export async function getFileSystemProvider(context: vscode.ExtensionContext): P
             })
         );
         
-        console.log('Scoped file system provider loaded successfully');
+        logger.info('EXTENSION', 'Scoped file system provider loaded successfully');
     }
     return fileSystemProvider;
 }
@@ -1509,12 +1678,12 @@ async function configureFileSystemProviderScope(context: vscode.ExtensionContext
     // Add extension storage directories
     if (context.storageUri) {
         provider.addAllowedPath(context.storageUri.fsPath);
-        console.log(`Added workspace storage path: ${context.storageUri.fsPath}`);
+        logger.info('EXTENSION', `Added workspace storage path: ${context.storageUri.fsPath}`);
     }
     
     if (context.globalStorageUri) {
         provider.addAllowedPath(context.globalStorageUri.fsPath);
-        console.log(`Added global storage path: ${context.globalStorageUri.fsPath}`);
+        logger.info('EXTENSION', `Added global storage path: ${context.globalStorageUri.fsPath}`);
     }
     
     // Add current MuTwoWorkspace directory if one is open
@@ -1526,7 +1695,7 @@ async function configureFileSystemProviderScope(context: vscode.ExtensionContext
         const isMuTwoWorkspace = await workspaceUtil.workspaceUtil.isMu2Workspace(currentWorkspace);
         if (isMuTwoWorkspace) {
             provider.addAllowedPath(currentWorkspace.fsPath);
-            console.log(`Added MuTwo workspace path: ${currentWorkspace.fsPath}`);
+            logger.info('EXTENSION', `Added MuTwo workspace path: ${currentWorkspace.fsPath}`);
         }
     }
     
@@ -1539,20 +1708,20 @@ async function configureFileSystemProviderScope(context: vscode.ExtensionContext
         for (const workspace of Object.values(registry.workspaces)) {
             if (workspace.workspace_path) {
                 provider.addAllowedPath(workspace.workspace_path);
-                console.log(`Added registered workspace path: ${workspace.workspace_path}`);
+                logger.info('EXTENSION', `Added registered workspace path: ${workspace.workspace_path}`);
             }
             // Also check URI-based paths
             if (workspace.workspace_uri) {
                 const uri = vscode.Uri.parse(workspace.workspace_uri);
                 provider.addAllowedPath(uri.fsPath);
-                console.log(`Added registered workspace URI path: ${uri.fsPath}`);
+                logger.info('EXTENSION', `Added registered workspace URI path: ${uri.fsPath}`);
             }
         }
     } catch (error) {
-        console.warn('Failed to load workspace registry for file system provider scope:', error);
+        logger.warn('EXTENSION', 'Failed to load workspace registry for file system provider scope:', error);
     }
     
-    console.log(`File system provider configured with ${provider.getAllowedPaths().length} allowed directories`);
+    logger.info('EXTENSION', `File system provider configured with ${provider.getAllowedPaths().length} allowed directories`);
 }
 
 /**
@@ -1560,10 +1729,10 @@ async function configureFileSystemProviderScope(context: vscode.ExtensionContext
  */
 export async function getWorkspaceManager(context: vscode.ExtensionContext): Promise<MuTwoWorkspaceManager> {
     if (!workspaceManager) {
-        console.log('Lazy-loading workspace manager...');
+        logger.info('EXTENSION', 'Lazy-loading workspace manager...');
         workspaceManager = new MuTwoWorkspaceManager(context);
         stateManager.setComponent('workspaceManager', workspaceManager);
-        console.log('Workspace manager loaded successfully');
+        logger.info('EXTENSION', 'Workspace manager loaded successfully');
     }
     return workspaceManager;
 }
@@ -1573,11 +1742,11 @@ export async function getWorkspaceManager(context: vscode.ExtensionContext): Pro
  */
 export function getProjectManager(context: vscode.ExtensionContext): ProjectManager {
     if (!projectManager) {
-        console.log('Lazy-loading project manager...');
-        const outputChannel = vscode.window.createOutputChannel('Mu Two Projects');
-        projectManager = new ProjectManager(context, outputChannel);
+        logger.info('EXTENSION', 'Lazy-loading project manager...');
+        // ProjectManager now uses unified logger instead of separate output channel
+        projectManager = new ProjectManager(context);
         stateManager.setComponent('projectManager', projectManager);
-        console.log('Project manager loaded successfully');
+        logger.info('EXTENSION', 'Project manager loaded successfully');
     }
     return projectManager;
 }
@@ -1587,11 +1756,11 @@ export function getProjectManager(context: vscode.ExtensionContext): ProjectMana
  */
 export function getSaveTwiceHandler(context: vscode.ExtensionContext): FileSaveTwiceHandler {
     if (!saveTwiceHandler) {
-        console.log('Lazy-loading save-twice handler...');
+        logger.info('EXTENSION', 'Lazy-loading save-twice handler...');
         const pm = getProjectManager(context);
         saveTwiceHandler = new FileSaveTwiceHandler(context, pm, boardManager);
         stateManager.setComponent('saveTwiceHandler', saveTwiceHandler);
-        console.log('Save-twice handler loaded successfully');
+        logger.info('EXTENSION', 'Save-twice handler loaded successfully');
     }
     return saveTwiceHandler;
 }
@@ -1630,7 +1799,7 @@ async function createDirectories(context: vscode.ExtensionContext): Promise<void
  * Clean deactivation
  */
 export function deactivate(): void {
-    console.log('Mu 2 Extension: Deactivating...');
+    logger.info('EXTENSION', 'Mu 2 Extension: Deactivating...');
 
     // Dispose of status bar item
     if (statusBarItem) {
@@ -1642,7 +1811,7 @@ export function deactivate(): void {
         stateManager.dispose();
     }
 
-    console.log('Mu 2 Extension: Deactivated');
+    logger.info('EXTENSION', 'Mu 2 Extension: Deactivated');
 }
 
 // Command implementations using BoardManager as primary system

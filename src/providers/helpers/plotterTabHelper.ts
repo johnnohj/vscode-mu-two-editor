@@ -7,6 +7,7 @@
 
 import * as vscode from 'vscode';
 import { getNonce } from '../../sys/utils/webview';
+import { getLogger } from '../../sys/unifiedLogger';
 
 export interface PlotterDataPoint {
 	timestamp: number;
@@ -38,6 +39,7 @@ export class PlotterTabHelper {
 	private plotterPanels = new Map<string, vscode.WebviewPanel>();
 	private activeSeries = new Map<string, PlotterSeries[]>();
 	private config: PlotterConfig;
+	private logger = getLogger();
 
 	constructor(
 		private context: vscode.ExtensionContext,
@@ -58,7 +60,7 @@ export class PlotterTabHelper {
 	 * Opens plotter in right panel for visual data output
 	 */
 	async createPlotterTab(sessionId: string, title: string = 'CircuitPython Plotter'): Promise<vscode.WebviewPanel> {
-		console.log(`PlotterTabHelper: Creating plotter tab for session ${sessionId}`);
+		this.logger.info('EXTENSION', `PlotterTabHelper: Creating plotter tab for session ${sessionId}`);
 
 		// Create webview panel in the right area (as mentioned in MU-TODO.md)
 		const panel = vscode.window.createWebviewPanel(
@@ -82,7 +84,7 @@ export class PlotterTabHelper {
 		panel.onDidDispose(() => {
 			this.plotterPanels.delete(sessionId);
 			this.activeSeries.delete(sessionId);
-			console.log(`PlotterTabHelper: Plotter panel for session ${sessionId} disposed`);
+			this.logger.info('EXTENSION', `PlotterTabHelper: Plotter panel for session ${sessionId} disposed`);
 		}, null, this.context.subscriptions);
 
 		// Handle messages from plotter webview
@@ -91,7 +93,7 @@ export class PlotterTabHelper {
 		}, null, this.context.subscriptions);
 
 		this.plotterPanels.set(sessionId, panel);
-		console.log(`PlotterTabHelper: Plotter tab created for session ${sessionId}`);
+		this.logger.info('EXTENSION', `PlotterTabHelper: Plotter tab created for session ${sessionId}`);
 
 		return panel;
 	}
@@ -408,7 +410,7 @@ export class PlotterTabHelper {
 				break;
 			case 'pauseResume':
 				// Handle pause/resume logic if needed
-				console.log(`PlotterTabHelper: ${message.paused ? 'Paused' : 'Resumed'} plotting for session ${sessionId}`);
+				this.logger.info('EXTENSION', `PlotterTabHelper: ${message.paused ? 'Paused' : 'Resumed'} plotting for session ${sessionId}`);
 				break;
 			case 'exportData':
 				this.exportSeriesData(sessionId);

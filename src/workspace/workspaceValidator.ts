@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { MuTwoWorkspace } from './workspace';
 import { IDevice } from '../devices/core/deviceDetector';
+import { getLogger } from '../sys/unifiedLogger';
 
 export interface WorkspaceValidationResult {
     isValidMu2Workspace: boolean;
@@ -30,11 +31,11 @@ export interface DeviceConnectionPermissions {
 
 export class WorkspaceValidator {
     private workspace: MuTwoWorkspace;
-    private outputChannel: vscode.OutputChannel;
+    private logger = getLogger();
 
     constructor(context: vscode.ExtensionContext) {
         this.workspace = MuTwoWorkspace.getInstance(context);
-        this.outputChannel = vscode.window.createOutputChannel('Mu 2 Workspace Validator');
+        // Using unified logger instead of createOutputChannel
     }
 
     /**
@@ -59,7 +60,7 @@ export class WorkspaceValidator {
             return result;
         }
 
-        this.outputChannel.appendLine(`Validating workspace: ${workspaceUri.fsPath}`);
+        this.logger.info('WORKSPACE', `Validating workspace: ${workspaceUri.fsPath}`);
 
         try {
             // Check for .vscode directory
@@ -103,11 +104,11 @@ export class WorkspaceValidator {
             // Determine if this is a valid Mu2 workspace
             result.isValidMu2Workspace = result.hasMu2Directory;
 
-            this.outputChannel.appendLine(`Validation complete. Valid Mu2 workspace: ${result.isValidMu2Workspace}`);
+            this.logger.info('WORKSPACE', `Validation complete. Valid Mu2 workspace: ${result.isValidMu2Workspace}`);
 
         } catch (error) {
             result.errors.push(`Validation error: ${error instanceof Error ? error.message : String(error)}`);
-            this.outputChannel.appendLine(`Validation error: ${error}`);
+            this.logger.error('WORKSPACE', `Validation error: ${error}`);
         }
 
         return result;
@@ -402,6 +403,6 @@ export class WorkspaceValidator {
     }
 
     dispose(): void {
-        this.outputChannel.dispose();
+        // Using unified logger - no manual disposal needed
     }
 }

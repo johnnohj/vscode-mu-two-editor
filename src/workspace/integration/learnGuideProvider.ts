@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as learnGuidesDatabase from '../../data/learn_guides.json';
 import { MuDevice } from '../../devices/core/deviceDetector';
+import { getLogger } from '../../sys/unifiedLogger';
 
 /**
  * TODO: Adafruit Learn Guides have their own GitHub repo, and as such, perhaps we should instead
@@ -30,11 +31,11 @@ export interface FallbackGuide {
  * Provider for learn guide information and downloads
  */
 export class LearnGuideProvider {
-    private _outputChannel: vscode.OutputChannel;
+    private _logger = getLogger();
     private _guidesDatabase: any;
 
     constructor() {
-        this._outputChannel = vscode.window.createOutputChannel('Mu 2 Learn Guides');
+        // Using unified logger instead of createOutputChannel
         this._guidesDatabase = learnGuidesDatabase;
     }
 
@@ -114,20 +115,20 @@ export class LearnGuideProvider {
     ): Promise<boolean> {
         const guideInfo = this.getLearnGuideInfo(device);
         if (!guideInfo?.guide_pdf_url) {
-            this._outputChannel.appendLine(`No PDF guide available for ${device.displayName}`);
+            this._logger.warn('WORKSPACE', `No PDF guide available for ${device.displayName}`);
             return false;
         }
 
         // Check connectivity first
         const isOnline = await this.checkConnectivity();
         if (!isOnline) {
-            this._outputChannel.appendLine('No internet connectivity - skipping download');
+            this._logger.warn('WORKSPACE', 'No internet connectivity - skipping download');
             return false;
         }
 
         try {
-            this._outputChannel.appendLine(`Downloading learn guide for ${device.displayName}...`);
-            
+            this._logger.info('WORKSPACE', `Downloading learn guide for ${device.displayName}...`);
+
             const response = await fetch(guideInfo.guide_pdf_url);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -135,14 +136,14 @@ export class LearnGuideProvider {
 
             const pdfData = new Uint8Array(await response.arrayBuffer());
             const pdfPath = vscode.Uri.joinPath(downloadPath, 'board-guide.pdf');
-            
+
             await vscode.workspace.fs.writeFile(pdfPath, pdfData);
-            
-            this._outputChannel.appendLine(`Learn guide downloaded: ${pdfPath.fsPath}`);
+
+            this._logger.info('WORKSPACE', `Learn guide downloaded: ${pdfPath.fsPath}`);
             return true;
 
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to download learn guide: ${error}`);
+            this._logger.error('WORKSPACE', `Failed to download learn guide: ${error}`);
             return false;
         }
     }
@@ -153,7 +154,7 @@ export class LearnGuideProvider {
     public async processPendingDownloads(): Promise<void> {
         // This would iterate through all workspaces and process their pending downloads
         // Implementation would go here for Phase 2
-        this._outputChannel.appendLine('Processing pending downloads (placeholder for Phase 2)');
+        this._logger.info('WORKSPACE', 'Processing pending downloads (placeholder for Phase 2)');
     }
 
     /**
@@ -201,6 +202,6 @@ export class LearnGuideProvider {
      * Dispose resources
      */
     public dispose(): void {
-        this._outputChannel.dispose();
+        // Using unified logger - no manual disposal needed
     }
 }

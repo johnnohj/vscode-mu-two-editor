@@ -10,7 +10,7 @@
 
 import { EventEmitter } from 'events';
 import * as vscode from 'vscode';
-import * as path from 'path';
+// import * as path from 'path'; // Migrated to VS Code URI-based path handling
 import { IPythonRuntime, RuntimeModule, PythonRuntimeType } from './IPythonRuntime';
 import { getTaskRunner } from '../sys/taskRunner';
 
@@ -55,7 +55,7 @@ export class AdafruitBundleManager extends EventEmitter {
         private bundleBasePath?: string
     ) {
         super();
-        this._bundlePath = bundleBasePath || path.join(context.globalStorageUri.fsPath, 'adafruit-bundle');
+        this._bundlePath = bundleBasePath || vscode.Uri.joinPath(context.globalStorageUri, 'adafruit-bundle').fsPath;
     }
 
     static getInstance(context?: vscode.ExtensionContext): AdafruitBundleManager {
@@ -175,7 +175,7 @@ export class AdafruitBundleManager extends EventEmitter {
             await this.updateGlobalBundle();
 
             // Create WASM lib directory
-            const wasmLibPath = path.join(wasmRuntimePath, 'lib');
+            const wasmLibPath = vscode.Uri.joinPath(vscode.Uri.file(wasmRuntimePath), 'lib').fsPath;
             await vscode.workspace.fs.createDirectory(vscode.Uri.file(wasmLibPath));
 
             // Copy from circup's bundle cache to WASM
@@ -199,7 +199,7 @@ export class AdafruitBundleManager extends EventEmitter {
         try {
             if (runtimeType === 'circuitpython' && devicePath) {
                 // Check device /lib directory
-                const libPath = path.join(devicePath, 'lib');
+                const libPath = vscode.Uri.joinPath(vscode.Uri.file(devicePath), 'lib').fsPath;
                 installed.push(...await this.scanCircuitPythonLibs(libPath));
             } else if (runtimeType === 'python') {
                 // Check pip list
@@ -331,7 +331,7 @@ export class AdafruitBundleManager extends EventEmitter {
     }
 
     private async loadBundleManifest(): Promise<void> {
-        const manifestPath = path.join(this._bundlePath, 'manifest.json');
+        const manifestPath = vscode.Uri.joinPath(vscode.Uri.file(this._bundlePath), 'manifest.json').fsPath;
 
         try {
             const content = await vscode.workspace.fs.readFile(vscode.Uri.file(manifestPath));
@@ -350,7 +350,7 @@ export class AdafruitBundleManager extends EventEmitter {
     private async saveBundleManifest(): Promise<void> {
         if (!this._bundleManifest) return;
 
-        const manifestPath = path.join(this._bundlePath, 'manifest.json');
+        const manifestPath = vscode.Uri.joinPath(vscode.Uri.file(this._bundlePath), 'manifest.json').fsPath;
         const content = JSON.stringify(this._bundleManifest, null, 2);
 
         await vscode.workspace.fs.writeFile(
@@ -475,8 +475,8 @@ export class AdafruitBundleManager extends EventEmitter {
     }
 
     private async copyLibraryFromBundle(bundlePath: string, libraryName: string, wasmLibPath: string): Promise<void> {
-        const sourcePath = path.join(bundlePath, 'lib', libraryName);
-        const targetPath = path.join(wasmLibPath, libraryName);
+        const sourcePath = vscode.Uri.joinPath(vscode.Uri.file(bundlePath), 'lib', libraryName).fsPath;
+        const targetPath = vscode.Uri.joinPath(vscode.Uri.file(wasmLibPath), libraryName).fsPath;
 
         try {
             // Copy library files (.py or .mpy) from bundle to WASM
@@ -499,7 +499,7 @@ export class AdafruitBundleManager extends EventEmitter {
                     libraries.push({
                         name: cleanName,
                         isInstalled: true,
-                        installationPath: path.join(libPath, name),
+                        installationPath: vscode.Uri.joinPath(vscode.Uri.file(libPath), name).fsPath,
                         isAdafruitBundle: cleanName.startsWith('adafruit_'),
                         supportedRuntimes: ['circuitpython']
                     });

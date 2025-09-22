@@ -5,6 +5,7 @@ import { MuTwoWorkspaceManager } from '../workspace/workspaceManager';
 import { IDevice } from '../devices/core/deviceDetector';
 import { getNonce } from '../sys/utils/webview';
 import { LanguageServiceBridge } from './language/core/LanguageServiceBridge';
+import { getLogger } from '../sys/unifiedLogger';
 
 import { BoardDetectionHelper } from './helpers/boardDetectionHelper';
 import { ReplSessionHelper } from './helpers/replSessionHelper';
@@ -26,6 +27,7 @@ export class EditorReplPanelProvider {
 	private boardDetectionHelper: BoardDetectionHelper;
 	private replSessionHelper: ReplSessionHelper;
 	private plotterTabHelper: PlotterTabHelper;
+	private logger = getLogger();
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
@@ -73,7 +75,7 @@ export class EditorReplPanelProvider {
 			return existingPanel;
 		}
 
-		console.log('Creating connected REPL with split editor down');
+		this.logger.info('EXTENSION', 'Creating connected REPL with split editor down');
 
 		try {
 			// Create webview panel first
@@ -100,11 +102,11 @@ export class EditorReplPanelProvider {
 
 			// Set initial context for the active panel
 			vscode.commands.executeCommand('setContext', 'activeWebviewPanelId', 'muTwo.connectedRepl');
-			console.log('Set context: activeWebviewPanelId = muTwo.connectedRepl');
+			this.logger.info('EXTENSION', 'Set context: activeWebviewPanelId = muTwo.connectedRepl');
 
 			// Then position it below using split command
 			await vscode.commands.executeCommand('workbench.action.moveEditorToBelowGroup');
-			console.log('Connected REPL panel created and positioned below');
+			this.logger.info('EXTENSION', 'Connected REPL panel created and positioned below');
 
 			const connectedPanel = new ConnectedReplPanel(
 				panel,
@@ -125,11 +127,11 @@ export class EditorReplPanelProvider {
 			// Update context variables to show panel exists and is visible
 			this.updatePanelContext(panelId, false); // false = not collapsed
 
-			console.log('Connected REPL panel created successfully');
+			this.logger.info('EXTENSION', 'Connected REPL panel created successfully');
 			return connectedPanel;
 
 		} catch (error) {
-			console.error('Failed to create connected REPL panel:', error);
+			this.logger.error('EXTENSION', 'Failed to create connected REPL panel:', error);
 			throw error;
 		}
 	}
@@ -172,16 +174,16 @@ export class EditorReplPanelProvider {
 	 * Show header for the given source editor
 	 */
 	showHeader(sourceEditor?: vscode.TextEditor): void {
-		console.log('EditorReplPanelProvider.showHeader called with editor:', sourceEditor?.document.fileName);
+		this.logger.info('EXTENSION', 'EditorReplPanelProvider.showHeader called with editor:', sourceEditor?.document.fileName);
 		const panelId = this.generatePanelId(sourceEditor);
-		console.log('Generated panel ID:', panelId);
+		this.logger.info('EXTENSION', 'Generated panel ID:', panelId);
 		const panel = this.activePanels.get(panelId);
 		if (panel) {
-			console.log('Found panel, calling showHeader on ConnectedReplPanel');
+			this.logger.info('EXTENSION', 'Found panel, calling showHeader on ConnectedReplPanel');
 			panel.showHeader();
 			vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', false);
 		} else {
-			console.log('No active panel found for panelId:', panelId, 'Available panels:', Array.from(this.activePanels.keys()));
+			this.logger.warn('EXTENSION', 'No active panel found for panelId:', panelId, 'Available panels:', Array.from(this.activePanels.keys()));
 		}
 	}
 
@@ -189,16 +191,16 @@ export class EditorReplPanelProvider {
 	 * Hide header for the given source editor
 	 */
 	hideHeader(sourceEditor?: vscode.TextEditor): void {
-		console.log('EditorReplPanelProvider.hideHeader called with editor:', sourceEditor?.document.fileName);
+		this.logger.info('EXTENSION', 'EditorReplPanelProvider.hideHeader called with editor:', sourceEditor?.document.fileName);
 		const panelId = this.generatePanelId(sourceEditor);
-		console.log('Generated panel ID:', panelId);
+		this.logger.info('EXTENSION', 'Generated panel ID:', panelId);
 		const panel = this.activePanels.get(panelId);
 		if (panel) {
-			console.log('Found panel, calling hideHeader on ConnectedReplPanel');
+			this.logger.info('EXTENSION', 'Found panel, calling hideHeader on ConnectedReplPanel');
 			panel.hideHeader();
 			vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', true);
 		} else {
-			console.log('No active panel found for panelId:', panelId, 'Available panels:', Array.from(this.activePanels.keys()));
+			this.logger.warn('EXTENSION', 'No active panel found for panelId:', panelId, 'Available panels:', Array.from(this.activePanels.keys()));
 		}
 	}
 
@@ -213,7 +215,7 @@ export class EditorReplPanelProvider {
 		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.exists', exists);
 		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.panelCollapsed', collapsed);
 
-		console.log(`Panel context updated: exists=${exists}, collapsed=${collapsed}`);
+		this.logger.info('EXTENSION', `Panel context updated: exists=${exists}, collapsed=${collapsed}`);
 	}
 
 	/**
@@ -247,6 +249,7 @@ export class ConnectedReplPanel {
 	private hasPlotterTab: boolean = false;
 	private isHidden: boolean = false;
 	private headerCollapsed: boolean = false;
+	private logger = getLogger();
 
 	constructor(
 		panel: vscode.WebviewPanel,
@@ -268,7 +271,7 @@ export class ConnectedReplPanel {
 
 		// Initialize context variables
 		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', false);
-		console.log('Initialized context: muTwo.connectedRepl.headerCollapsed = false');
+		this.logger.info('EXTENSION', 'Initialized context: muTwo.connectedRepl.headerCollapsed = false');
 	}
 
 	private setupWebview(): void {
@@ -327,15 +330,15 @@ export class ConnectedReplPanel {
 		// Generate session ID for plotter
 		const sessionId = `plotter-${Date.now()}`;
 
-		console.log('Creating plotter tab for visual data output');
+		this.logger.info('EXTENSION', 'Creating plotter tab for visual data output');
 
 		try {
 			// Create plotter tab using helper - it will handle positioning
 			await this.plotterTabHelper.createPlotterTab(sessionId, 'CircuitPython Plotter');
 			this.hasPlotterTab = true;
-			console.log('Plotter tab created successfully');
+			this.logger.info('EXTENSION', 'Plotter tab created successfully');
 		} catch (error) {
-			console.error('Failed to create plotter tab:', error);
+			this.logger.error('EXTENSION', 'Failed to create plotter tab:', error);
 			throw error;
 		}
 	}
@@ -343,7 +346,7 @@ export class ConnectedReplPanel {
 	private async connectToBoard(boardId: string): Promise<void> {
 		// Use board detection helper to detect and associate
 		const boardAssociation = await this.boardDetectionHelper.detectAndAssociate();
-		console.log(`ConnectedReplPanel: Connected to board association:`, boardAssociation);
+		this.logger.info('EXTENSION', `ConnectedReplPanel: Connected to board association:`, boardAssociation);
 	}
 
 	private async handleReplCommand(command: string): Promise<void> {
@@ -729,28 +732,28 @@ export class ConnectedReplPanel {
 	}
 
 	showHeader(): void {
-		console.log('ConnectedReplPanel.showHeader called');
+		this.logger.info('EXTENSION', 'ConnectedReplPanel.showHeader called');
 		this.headerCollapsed = false;
 
 		// Send message to webview to show header
 		this.panel.webview.postMessage({
 			type: 'showHeader'
 		});
-		console.log('Sent showHeader message to webview');
+		this.logger.info('EXTENSION', 'Sent showHeader message to webview');
 
 		// Update context variable
 		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', false);
 	}
 
 	hideHeader(): void {
-		console.log('ConnectedReplPanel.hideHeader called');
+		this.logger.info('EXTENSION', 'ConnectedReplPanel.hideHeader called');
 		this.headerCollapsed = true;
 
 		// Send message to webview to hide header
 		this.panel.webview.postMessage({
 			type: 'hideHeader'
 		});
-		console.log('Sent hideHeader message to webview');
+		this.logger.info('EXTENSION', 'Sent hideHeader message to webview');
 
 		// Update context variable
 		vscode.commands.executeCommand('setContext', 'muTwo.connectedRepl.headerCollapsed', true);

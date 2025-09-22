@@ -20,6 +20,8 @@ import {
     HardwareState,
     HardwareExecutionResult
 } from '../hardware/HardwareAbstraction';
+import { MuTwoRuntimeCoordinator } from '../../sys/unifiedRuntimeCoordinator';
+import { getService } from '../../sys/serviceRegistry';
 
 // Mu Two debug adapter interfaces (runtime-agnostic)
 export interface MuLaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
@@ -28,7 +30,7 @@ export interface MuLaunchRequestArguments extends DebugProtocol.LaunchRequestArg
     request?: string;
     port?: string;
     baudRate?: number;
-    runtime?: 'circuitpython' | 'micropython' | 'python';
+    runtime?: 'circuitpython' | 'micropython' | 'blinka' | 'python';
     program?: string;
     autoDetect?: boolean;
     enableRepl?: boolean;
@@ -37,6 +39,7 @@ export interface MuLaunchRequestArguments extends DebugProtocol.LaunchRequestArg
 
 // Extended capabilities for Mu debugging
 declare module '@vscode/debugprotocol' {
+	 // expect @typescript-eslint/no-namespace
     namespace DebugProtocol {
         interface Capabilities {
             supportsDeviceChannel?: boolean;
@@ -61,7 +64,7 @@ export interface SimulatedSensor {
 
 export interface SimulatedGPIO {
     pin: number;
-    mode: 'input' | 'output' | 'pwm' | 'analog';
+    mode: 'input' | 'output' | 'digital' | 'analog' | 'pwm';
     value: number | boolean;
     pullup: boolean;
     pulldown: boolean;
@@ -101,6 +104,7 @@ export interface ExecutionEnvironment {
 }
 
 // Enhanced DAP request types for device channel operations
+// expect @typescript-eslint/no-namespace
 export namespace DeviceChannelRequests {
     export const ConnectDevice = 'deviceChannel/connectDevice';
     export const DisconnectDevice = 'deviceChannel/disconnectDevice';
@@ -219,6 +223,9 @@ export interface FileTransferProgress {
  * Hardware State Timeline - Tracks hardware changes during code execution
  * This is the key debugging information showing how code affects hardware over time
  */
+
+// TODO: I take it the extension is recording the timestamps, but are we also logging/reading
+// ticks from physical hardware (and simulated counterparts) to help 'match up' the chronology?
 export class HardwareStateTimeline {
     private events: HardwareEvent[] = [];
     private startTime: number = Date.now();
@@ -255,7 +262,7 @@ export class HardwareStateTimeline {
 export interface HardwareEvent {
     type: 'pin_change' | 'sensor_reading' | 'actuator_command' | 'communication' | 'breakpoint';
     target: string | number; // pin number, sensor ID, etc.
-    previousValue?: any;
+    previousValue?: null | any;
     newValue: any;
     timestamp: number; // ms since execution started
     codeLocation?: {
@@ -265,25 +272,20 @@ export interface HardwareEvent {
 }
 
 /**
- * CircuitPython Debug Adapter - Hardware-Aware Code Debugging
- * 
- * This is THE CircuitPython debugger. It provides:
- * - Code execution debugging with real-time hardware state monitoring
- * - Device twinning: virtual representation of physical hardware state
- * - Hardware interaction visualization as code executes
- * - Pin state changes, sensor readings, actuator responses during execution
- * - Physical-first state sync: hardware always wins over virtual state
- * - Board-aware completions and diagnostics via LSP integration
- * 
- * The "debug session" here is debugging how your CircuitPython code
- * interacts with hardware, not debugging the CircuitPython firmware itself.
- */
-
-/**
  * Mu Two Debug Adapter - Runtime-agnostic Debug Adapter Protocol implementation
  *
  * Supports CircuitPython (flagship), MicroPython, and Python runtimes while
  * maintaining consistent debugging interface across all Python variants.
+ * It provides:
+* - Code execution debugging with real-time hardware state monitoring
+* - Device twinning: virtual representation of physical hardware state
+* - Hardware interaction visualization as code executes
+* - Pin state changes, sensor readings, actuator responses during execution
+* - Physical-first state sync: hardware always wins over virtual state
+* - Board-aware completions and diagnostics via LSP integration
+* 
+* The "debug session" here is debugging how your runtime code
+* interacts with hardware, not debugging any firmware itself.
  */
 export class MuDebugAdapter extends DebugSession {
     private _deviceConnections = new Map<string, DeviceConnectionInfo>();
@@ -315,19 +317,54 @@ export class MuDebugAdapter extends DebugSession {
         this._deviceDetector = new MuDeviceDetector();
         this._deviceModelFactory = new DeviceModelFactory();
         this._boardTemplateGenerator = new BoardTemplateGenerator();
-        this._wasmRuntimeManager = new WasmRuntimeManager({
-            enableHardwareSimulation: true,
-            debugMode: true
-        });
+
+        // Initialize WASM runtime manager - will be set up properly in initialize method
+        this._wasmRuntimeManager = null as any; // Temporary null, will be set in initializeWasmRuntime
 
         console.log('Mu Debug Adapter initialized with multi-runtime support');
     }
 
     /**
+     * Initialize WASM runtime manager using unified coordinator
+     */
+    private async initializeWasmRuntime(): Promise<void> {
+        if (this._wasmRuntimeManager) {
+            return; // Already initialized
+        }
+
+        try {
+            // Use shared WASM runtime from unified coordinator
+            const coordinator = getService<MuTwoRuntimeCoordinator>('runtimeCoordinator');
+            if (coordinator) {
+                this._wasmRuntimeManager = await coordinator.getSharedWasmRuntime();
+                console.log('✓ MuDebugAdapter: Using shared WASM runtime from coordinator');
+            } else {
+                // Fallback: create runtime directly if coordinator not available
+                console.warn('MuDebugAdapter: Coordinator not available, creating WASM runtime directly');
+                this._wasmRuntimeManager = new WasmRuntimeManager({
+                    enableHardwareSimulation: true,
+                    debugMode: true
+                });
+                await this._wasmRuntimeManager.initialize();
+                console.log('✓ MuDebugAdapter: WASM runtime initialized directly');
+            }
+        } catch (error) {
+            console.error('MuDebugAdapter: Failed to initialize WASM runtime', error);
+            throw error;
+        }
+    }
+
+    /**
      * Set the active runtime for this debug session
      */
-    public setRuntime(runtime: 'circuitpython' | 'micropython' | 'python'): void {
+    public async setRuntime(runtime: 'circuitpython' | 'micropython' | 'python'): Promise<void> {
         this._activeRuntime = runtime;
+
+        // Initialize WASM runtime if not already done
+        if (!this._wasmRuntimeManager) {
+            await this.initializeWasmRuntime();
+        }
+
         console.log(`Debug adapter runtime set to: ${runtime}`);
     }
 

@@ -1,3 +1,5 @@
+import { getLogger } from '../../sys/unifiedLogger';
+
 export interface CommandResult {
     output: string;
     success: boolean;
@@ -14,6 +16,7 @@ export interface ExtensionServices {
 export class CommandProcessor {
     private isConnected: boolean = false;
     private services: ExtensionServices;
+    private logger = getLogger();
 
     constructor(services: ExtensionServices) {
         this.services = services;
@@ -28,20 +31,20 @@ export class CommandProcessor {
     }
 
     async executeCommand(command: string): Promise<CommandResult> {
-        console.log(`[CommandProcessor] Executing command: "${command}"`);
+        this.logger.info('EXTENSION', `[CommandProcessor] Executing command: "${command}"`);
         const parts = command.trim().split(' ');
         const cmd = parts[0].toLowerCase();
         
         // Handle different command types
         if (this.isConnected && !cmd.startsWith('.')) {
-            console.log(`[CommandProcessor] Routing to device: ${command}`);
+            this.logger.info('EXTENSION', `[CommandProcessor] Routing to device: ${command}`);
             // When connected, non-dot commands go to device
             return await this.executeDeviceCommand(command);
         }
         
         // Local REPL commands (handle all webview commands here)
         const actualCmd = cmd.startsWith('.') ? cmd.substring(1) : cmd;
-        console.log(`[CommandProcessor] Processing REPL command: "${actualCmd}"`);
+        this.logger.info('EXTENSION', `[CommandProcessor] Processing REPL command: "${actualCmd}"`);
         
         switch (actualCmd) {
             case 'help':
@@ -55,7 +58,7 @@ export class CommandProcessor {
                 
             case 'ports':
             case 'list':
-                console.log(`[CommandProcessor] Listing serial ports...`);
+                this.logger.info('EXTENSION', `[CommandProcessor] Listing serial ports...`);
                 return await this.listSerialPorts();
                 
             case 'connect':
@@ -107,8 +110,8 @@ export class CommandProcessor {
     }
 
     private async listSerialPorts(): Promise<CommandResult> {
-        console.log(`[CommandProcessor] listSerialPorts called, services:`, !!this.services);
-        console.log(`[CommandProcessor] deviceDetector available:`, !!this.services?.deviceDetector);
+        this.logger.info('EXTENSION', `[CommandProcessor] listSerialPorts called, services:`, !!this.services);
+        this.logger.info('EXTENSION', `[CommandProcessor] deviceDetector available:`, !!this.services?.deviceDetector);
         
         if (!this.services?.deviceDetector) {
             return {

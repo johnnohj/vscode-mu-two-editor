@@ -21,6 +21,8 @@ import {
 } from './IPythonRuntime';
 import { WasmRuntimeManager } from '../sys/wasmRuntimeManager';
 import { MuDeviceDetector, MuDevice } from '../devices/core/deviceDetector';
+import { MuTwoRuntimeCoordinator } from '../sys/unifiedRuntimeCoordinator';
+import { getService } from '../sys/serviceRegistry';
 
 /**
  * CircuitPython Runtime - Flagship Implementation
@@ -110,14 +112,27 @@ export class CircuitPythonRuntime extends EventEmitter implements IPythonRuntime
 
             // Initialize WASM runtime for virtual execution
             if (this.capabilities.supportsWASMExecution) {
-                this._wasmRuntime = new WasmRuntimeManager({
-                    runtimePath: this._config.wasmPath,
-                    enableHardwareSimulation: true,
-                    debugMode: this._config.debugMode
-                }, this._context);
-
-                await this._wasmRuntime.initialize();
-                console.log('✓ CircuitPython WASM runtime initialized');
+                try {
+                    // Use shared WASM runtime from unified coordinator
+                    const coordinator = getService<MuTwoRuntimeCoordinator>('runtimeCoordinator');
+                    if (coordinator) {
+                        this._wasmRuntime = await coordinator.getSharedWasmRuntime();
+                        console.log('✓ CircuitPython runtime using shared WASM runtime from coordinator');
+                    } else {
+                        // Fallback: create runtime directly if coordinator not available
+                        console.warn('CircuitPython runtime: Coordinator not available, creating WASM runtime directly');
+                        this._wasmRuntime = new WasmRuntimeManager({
+                            runtimePath: this._config.wasmPath,
+                            enableHardwareSimulation: true,
+                            debugMode: this._config.debugMode
+                        }, this._context);
+                        await this._wasmRuntime.initialize();
+                        console.log('✓ CircuitPython WASM runtime initialized directly');
+                    }
+                } catch (error) {
+                    console.error('CircuitPython runtime: Failed to get WASM runtime', error);
+                    // Continue without WASM support if it fails
+                }
             }
 
             // Initialize device detector for physical devices

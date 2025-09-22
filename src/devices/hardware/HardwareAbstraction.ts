@@ -11,6 +11,8 @@
 
 import { EventEmitter } from 'events';
 import { WasmRuntimeManager, WasmHardwareState } from '../../sys/wasmRuntimeManager';
+import { MuTwoRuntimeCoordinator } from '../../sys/unifiedRuntimeCoordinator';
+import { getService } from '../../sys/serviceRegistry';
 
 // Simplified hardware state interfaces (replacing complex device twinning)
 export interface HardwarePin {
@@ -395,6 +397,37 @@ export class PhysicalHardware extends EventEmitter implements IHardwareAbstracti
  * Creates the appropriate hardware implementation based on device type
  */
 export class HardwareAbstractionFactory {
+    /**
+     * Create hardware abstraction using shared WASM runtime from coordinator
+     */
+    static async createWithCoordinator(
+        type: 'physical' | 'wasm-virtual',
+        deviceId: string,
+        options: {
+            connectionInfo?: { port: string; baudRate: number };
+        }
+    ): Promise<IHardwareAbstraction> {
+
+        if (type === 'wasm-virtual') {
+            // Get shared WASM runtime from coordinator
+            const coordinator = getService<MuTwoRuntimeCoordinator>('runtimeCoordinator');
+            if (coordinator) {
+                const wasmRuntime = await coordinator.getSharedWasmRuntime();
+                return new WasmVirtualHardware(deviceId, wasmRuntime);
+            } else {
+                throw new Error('Runtime coordinator not available for virtual hardware creation');
+            }
+        } else {
+            if (!options.connectionInfo) {
+                throw new Error('Connection info required for physical hardware');
+            }
+            return new PhysicalHardware(deviceId, options.connectionInfo);
+        }
+    }
+
+    /**
+     * Legacy method - use createWithCoordinator for new code
+     */
     static create(
         type: 'physical' | 'wasm-virtual',
         deviceId: string,

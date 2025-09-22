@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { MuDebugAdapter } from '../protocols/debugAdapter';
 import { IDevice, MuDevice } from './deviceDetector';
 import { SerialMonitorCooperativeManager } from './serialMonitorCooperativeManager';
+import { getLogger } from '../../sys/unifiedLogger';
 
 /**
  * Device Connection State
@@ -44,7 +45,7 @@ export interface DeviceConfiguration {
 export class DeviceManager implements vscode.DebugAdapterDescriptorFactory {
 	private _connectionStates = new Map<string, DeviceConnectionState>();
 	private _activeSession: vscode.DebugSession | null = null;
-	private _outputChannel: vscode.OutputChannel;
+	private _logger = getLogger();
 	private _onDidSessionStart = new vscode.EventEmitter<vscode.DebugSession>();
 	private _onDidSessionEnd = new vscode.EventEmitter<vscode.DebugSession>();
 	private _onConnectionStateChanged = new vscode.EventEmitter<{device: IDevice, state: DeviceConnectionState}>();
@@ -57,7 +58,7 @@ export class DeviceManager implements vscode.DebugAdapterDescriptorFactory {
 		private context: vscode.ExtensionContext,
 		private serialMonitorManager?: SerialMonitorCooperativeManager
 	) {
-		this._outputChannel = vscode.window.createOutputChannel('Device Manager');
+		// Using unified logger instead of separate output channel
 	}
 
 	/**
@@ -244,7 +245,7 @@ export class DeviceManager implements vscode.DebugAdapterDescriptorFactory {
 			const debugConfig = await this.prepareDebugSession(config);
 			return await this.startDebugSession(debugConfig);
 		} catch (error) {
-			this._outputChannel.appendLine(`Failed to attach to device ${devicePath}: ${error}`);
+			this._logger.error('DEVICE_MANAGER', `Failed to attach to device ${devicePath}: ${error}`);
 			return false;
 		}
 	}
@@ -263,7 +264,7 @@ export class DeviceManager implements vscode.DebugAdapterDescriptorFactory {
 			});
 			return result?.success === true;
 		} catch (error) {
-			this._outputChannel.appendLine(`Failed to upload and run file: ${error}`);
+			this._logger.error('DEVICE_MANAGER', `Failed to upload and run file: ${error}`);
 			return false;
 		}
 	}
@@ -340,14 +341,14 @@ export class DeviceManager implements vscode.DebugAdapterDescriptorFactory {
 			throw new Error('Port redirected to Serial Monitor - connection not established');
 		}
 
-		this._outputChannel.appendLine(`✅ Serial monitor conflict check passed for port ${config.port}`);
+		this._logger.info('DEVICE_MANAGER', `✅ Serial monitor conflict check passed for port ${config.port}`);
 	}
 
 	/**
 	 * Dispose resources
 	 */
 	public dispose(): void {
-		this._outputChannel.dispose();
+		// No longer using separate output channel - using unified logger
 		this._onDidSessionStart.dispose();
 		this._onDidSessionEnd.dispose();
 		this._onConnectionStateChanged.dispose();

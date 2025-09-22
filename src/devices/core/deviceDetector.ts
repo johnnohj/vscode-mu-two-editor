@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { SerialPort } from 'serialport';
+import { getLogger } from '../../sys/unifiedLogger';
 const deviceDatabase = import('../../data/circuitpython_devices.json');
 const detectionHelpers = import('../../data/detection_helpers.json');
 
@@ -71,7 +72,7 @@ export interface DeviceEvent {
 export class MuDeviceDetector implements vscode.Disposable {
 	private _deviceDatabase: any;
 	private _detectionHelpers: any;
-	private _outputChannel: vscode.OutputChannel;
+	private _logger = getLogger();
 	private _usbEventEmitter = new vscode.EventEmitter<DeviceEvent>();
 	private _disposables: vscode.Disposable[] = [];
 	private _lastDetectionResult: DetectionResult | null = null;
@@ -84,8 +85,8 @@ export class MuDeviceDetector implements vscode.Disposable {
 		this._deviceDatabase = deviceDatabase;
 		this._detectionHelpers = detectionHelpers;
 		// Note: Currently uses CircuitPython database as flagship, will expand for multi-runtime
-		this._outputChannel = vscode.window.createOutputChannel('Mu Device Detection');
-		
+		// Using unified logger instead of separate output channel
+
 		// Initialize USB event monitoring as first-line strategy
 		this.initializeDeviceMonitoring();
 		
@@ -103,9 +104,9 @@ export class MuDeviceDetector implements vscode.Disposable {
 			// Also watch filesystem for CIRCUITPY drives
 			this.initializeFilesystemWatching();
 
-			this._outputChannel.appendLine('✅ WebUSB and filesystem device monitoring initialized - CircuitPython devices will be detected automatically');
+			this._logger.info('DEVICE_DETECTOR', '✅ WebUSB and filesystem device monitoring initialized - CircuitPython devices will be detected automatically');
 		} catch (error) {
-			this._outputChannel.appendLine(`❌ Failed to initialize device monitoring: ${error instanceof Error ? error.message : String(error)}`);
+			this._logger.error('DEVICE_DETECTOR', `❌ Failed to initialize device monitoring: ${error instanceof Error ? error.message : String(error)}`);
 			// Fallback to periodic scanning
 			this.startPeriodicDeviceScanning();
 		}
@@ -127,13 +128,13 @@ export class MuDeviceDetector implements vscode.Disposable {
 					await this.handleWebUSBDeviceChange('disconnected', event.device);
 				});
 
-				this._outputChannel.appendLine('✅ WebUSB event monitoring initialized');
+				this._logger.info('DEVICE_DETECTOR', '✅ WebUSB event monitoring initialized');
 			} else {
-				this._outputChannel.appendLine('⚠️ WebUSB not available, falling back to polling');
+				this._logger.warn('DEVICE_DETECTOR', '⚠️ WebUSB not available, falling back to polling');
 				this.startPeriodicDeviceScanning();
 			}
 		} catch (error) {
-			this._outputChannel.appendLine(`⚠️ WebUSB initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+			this._logger.warn('DEVICE_DETECTOR', `⚠️ WebUSB initialization failed: ${error instanceof Error ? error.message : String(error)}`);
 			this.startPeriodicDeviceScanning();
 		}
 	}
@@ -148,19 +149,19 @@ export class MuDeviceDetector implements vscode.Disposable {
 			const watcher = vscode.workspace.createFileSystemWatcher('/**/CIRCUITPY/**', false, true, false);
 
 			watcher.onDidCreate(async (uri) => {
-				this._outputChannel.appendLine(`📁 CIRCUITPY filesystem detected: ${uri.fsPath}`);
+				this._logger.info('DEVICE_DETECTOR', `📁 CIRCUITPY filesystem detected: ${uri.fsPath}`);
 				await this.handleFilesystemDeviceChange('mounted', uri);
 			});
 
 			watcher.onDidDelete(async (uri) => {
-				this._outputChannel.appendLine(`📁 CIRCUITPY filesystem removed: ${uri.fsPath}`);
+				this._logger.info('DEVICE_DETECTOR', `📁 CIRCUITPY filesystem removed: ${uri.fsPath}`);
 				await this.handleFilesystemDeviceChange('unmounted', uri);
 			});
 
 			this._disposables.push(watcher);
-			this._outputChannel.appendLine('✅ CIRCUITPY filesystem watching initialized');
+			this._logger.info('DEVICE_DETECTOR', '✅ CIRCUITPY filesystem watching initialized');
 		} catch (error) {
-			this._outputChannel.appendLine(`⚠️ Filesystem watching failed: ${error instanceof Error ? error.message : String(error)}`);
+			this._logger.warn('DEVICE_DETECTOR', `⚠️ Filesystem watching failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 
@@ -176,7 +177,7 @@ export class MuDeviceDetector implements vscode.Disposable {
 
 			// Check if this is a known CircuitPython device
 			if (this.isKnownCircuitPythonDevice(vidHex, pidHex)) {
-				this._outputChannel.appendLine(`📱 CircuitPython device ${eventType}: ${vidHex}:${pidHex}`);
+				this._logger.info('DEVICE_DETECTOR', `📱 CircuitPython device ${eventType}: ${vidHex}:${pidHex}`);
 
 				// Trigger device detection after a short delay
 				setTimeout(async () => {
@@ -186,7 +187,7 @@ export class MuDeviceDetector implements vscode.Disposable {
 				}, eventType === 'connected' ? 2000 : 500);
 			}
 		} catch (error) {
-			this._outputChannel.appendLine(`WebUSB event error: ${error instanceof Error ? error.message : String(error)}`);
+			this._logger.error('DEVICE_DETECTOR', `WebUSB event error: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 
@@ -195,14 +196,14 @@ export class MuDeviceDetector implements vscode.Disposable {
 	 */
 	private async handleFilesystemDeviceChange(eventType: 'mounted' | 'unmounted', uri: vscode.Uri): Promise<void> {
 		try {
-			this._outputChannel.appendLine(`📁 CIRCUITPY drive ${eventType}: ${uri.fsPath}`);
+			this._logger.info('DEVICE_DETECTOR', `📁 CIRCUITPY drive ${eventType}: ${uri.fsPath}`);
 
 			// Trigger device detection
 			const detectionResult = await this.detectDevices();
 			this.emitDeviceChangeEvents(this._lastDetectionResult, detectionResult);
 			this._lastDetectionResult = detectionResult;
 		} catch (error) {
-			this._outputChannel.appendLine(`Filesystem event error: ${error instanceof Error ? error.message : String(error)}`);
+			this._logger.error('DEVICE_DETECTOR', `Filesystem event error: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 
@@ -268,14 +269,14 @@ export class MuDeviceDetector implements vscode.Disposable {
 		for (const portPath of newPorts) {
 			const portInfo = currentPorts.find(p => p.path === portPath);
 			if (portInfo && this.isLikelyCircuitPythonDevice(portInfo)) {
-				this._outputChannel.appendLine(`📱 CircuitPython device detected: ${portPath}`);
+				this._logger.info('DEVICE_DETECTOR', `📱 CircuitPython device detected: ${portPath}`);
 				await this.handleDeviceChange('attached', portInfo);
 			}
 		}
 
 		// Handle removed devices
 		for (const portPath of removedPorts) {
-			this._outputChannel.appendLine(`📤 Device removed: ${portPath}`);
+			this._logger.info('DEVICE_DETECTOR', `📤 Device removed: ${portPath}`);
 			await this.handleDeviceChange('detached', { path: portPath });
 		}
 
@@ -325,7 +326,7 @@ export class MuDeviceDetector implements vscode.Disposable {
 			this.emitDeviceChangeEvents(previousResult, detectionResult);
 
 		} catch (error) {
-			this._outputChannel.appendLine(`❌ Error handling USB device change: ${error}`);
+			this._logger.error('DEVICE_DETECTOR', `❌ Error handling USB device change: ${error}`);
 		} finally {
 			this._detectionInProgress = false;
 		}
@@ -345,7 +346,7 @@ export class MuDeviceDetector implements vscode.Disposable {
 		if (!previousResult) {
 			// First detection run - emit 'added' for all current devices
 			currentResult.devices.forEach(device => {
-				this._outputChannel.appendLine(`🔌 CircuitPython device discovered: ${device.displayName}`);
+				this._logger.info('DEVICE_DETECTOR', `🔌 CircuitPython device discovered: ${device.displayName}`);
 				this._usbEventEmitter.fire({
 					type: 'added',
 					device: device
@@ -364,7 +365,7 @@ export class MuDeviceDetector implements vscode.Disposable {
 		
 		// Emit events for changes
 		addedDevices.forEach(device => {
-			this._outputChannel.appendLine(`➕ CircuitPython device added: ${device.displayName} at ${device.path}`);
+			this._logger.info('DEVICE_DETECTOR', `➕ CircuitPython device added: ${device.displayName} at ${device.path}`);
 			this._usbEventEmitter.fire({
 				type: 'added',
 				device: device
@@ -372,7 +373,7 @@ export class MuDeviceDetector implements vscode.Disposable {
 		});
 
 		removedDevices.forEach(device => {
-			this._outputChannel.appendLine(`➖ CircuitPython device removed: ${device.displayName} from ${device.path}`);
+			this._logger.info('DEVICE_DETECTOR', `➖ CircuitPython device removed: ${device.displayName} from ${device.path}`);
 			this._usbEventEmitter.fire({
 				type: 'removed',
 				device: device
@@ -410,13 +411,13 @@ export class MuDeviceDetector implements vscode.Disposable {
 			// Calculate supported devices count
 			result.supportedDevices = result.circuitPythonDevices.length;
 
-			this._outputChannel.appendLine(
+			this._logger.info('DEVICE_DETECTOR',
 				`Detection complete: ${result.circuitPythonDevices.length} CircuitPython devices found out of ${result.totalDevices} total serial devices`
 			);
 
 			return result;
 		} catch (error) {
-			this._outputChannel.appendLine(`Device detection error: ${error}`);
+			this._logger.error('DEVICE_DETECTOR', `Device detection error: ${error}`);
 			throw error;
 		}
 	}
@@ -746,6 +747,6 @@ export class MuDeviceDetector implements vscode.Disposable {
 		this._disposables.forEach(d => d.dispose());
 		this._disposables = [];
 
-		this._outputChannel.dispose();
+		// No longer using separate output channel - using unified logger
 	}
 }

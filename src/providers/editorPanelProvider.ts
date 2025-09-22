@@ -5,6 +5,7 @@ import { MuTwoWorkspaceManager } from '../workspace/workspaceManager';
 import { IDevice } from '../devices/core/deviceDetector';
 import { getNonce } from '../sys/utils/webview';
 import { LanguageServiceBridge } from './language/core/LanguageServiceBridge';
+import { getLogger } from '../sys/unifiedLogger';
 
 /**
  * Editor Panel Provider
@@ -21,6 +22,7 @@ export class EditorPanelProvider {
 	private currentDocument?: vscode.TextDocument;
 	private isPanelCollapsed: boolean = true;
 	private languageServiceBridge: LanguageServiceBridge;
+	private logger = getLogger();
 
 	constructor(context: vscode.ExtensionContext) {
 		this.context = context;
@@ -37,9 +39,9 @@ export class EditorPanelProvider {
 				enableSignatureHelp: true,
 				defaultBoard: 'circuitplayground_express' // TODO: Get from configuration
 			});
-			console.log('EditorPanel: Language service bridge initialized successfully');
+			this.logger.info('EXTENSION', 'EditorPanel: Language service bridge initialized successfully');
 		} catch (error) {
-			console.error('EditorPanel: Failed to initialize language service bridge:', error);
+			this.logger.error('EXTENSION', 'EditorPanel: Failed to initialize language service bridge:', error);
 			// Create a null object that provides safe method calls
 			this.languageServiceBridge = this.createNullLanguageServiceBridge();
 		}
@@ -47,21 +49,21 @@ export class EditorPanelProvider {
 		// Initialize VS Code context variable for menu visibility
 		this.updatePanelContext();
 		
-		console.log('Editor Panel Provider initialized with CircuitPython language service');
+		this.logger.info('EXTENSION', 'Editor Panel Provider initialized with CircuitPython language service');
 	}
 
 	/**
 	 * Split the editor view vertically - simple and clean
 	 */
 	async createOrShowPanel(): Promise<void> {
-		console.log('Creating vertical split in editor');
+		this.logger.info('EXTENSION', 'Creating vertical split in editor');
 
 		try {
 			// Use VS Code's built-in split functionality
 			await vscode.commands.executeCommand('workbench.action.splitEditorDown');
-			console.log('Editor split successfully');
+			this.logger.info('EXTENSION', 'Editor split successfully');
 		} catch (error) {
-			console.error('Failed to split editor:', error);
+			this.logger.error('EXTENSION', 'Failed to split editor:', error);
 			throw error;
 		}
 	}
@@ -77,7 +79,7 @@ export class EditorPanelProvider {
 	 * Handle panel messages with simplified communication
 	 */
 	private async handlePanelMessage(message: any): Promise<void> {
-		console.log('Editor panel message:', message);
+		this.logger.info('EXTENSION', 'Editor panel message:', message);
 
 		// Access global services safely without circular imports
 		const debugManager = this.getDebugManager();
@@ -88,13 +90,13 @@ export class EditorPanelProvider {
 				// Update local state and VS Code context when panel is toggled in webview
 				this.isPanelCollapsed = message.collapsed;
 				this.updatePanelContext();
-				console.log('Panel state updated:', this.isPanelCollapsed ? 'collapsed' : 'expanded');
+				this.logger.info('EXTENSION', 'Panel state updated:', this.isPanelCollapsed ? 'collapsed' : 'expanded');
 				break;
 				
 			case 'showTerminalPanel':
 			case 'hideTerminalPanel':
 				// Panel state is managed in webview App component
-				console.log('Panel state message:', message.type);
+				this.logger.info('EXTENSION', 'Panel state message:', message.type);
 				break;
 
 			case 'terminalInput':
@@ -107,7 +109,7 @@ export class EditorPanelProvider {
 							// Use proper method signature
 							await debugManager.sendToRepl(input);
 						} catch (error) {
-							console.error('Terminal input error:', error);
+							this.logger.error('EXTENSION', 'Terminal input error:', error);
 						}
 					}
 				}
@@ -156,7 +158,7 @@ export class EditorPanelProvider {
 				break;
 
 			default:
-				console.log('Unhandled editor message:', message.type);
+				this.logger.warn('EXTENSION', 'Unhandled editor message:', message.type);
 				break;
 		}
 	}
@@ -267,13 +269,13 @@ export class EditorPanelProvider {
 		token: vscode.CancellationToken
 	): Promise<void> {
 		try {
-			console.log(`=== CUSTOM EDITOR RESOLVE START ===`);
-			console.log(`EditorPanel: Resolving custom text editor for ${document.fileName}`);
-			console.log(`EditorPanel: Document URI: ${document.uri.toString()}`);
-			console.log(`EditorPanel: Webview panel viewType: ${webviewPanel.viewType}`);
-			console.log(`EditorPanel: Panel title: ${webviewPanel.title}`);
-			console.log(`EditorPanel: Panel visible: ${webviewPanel.visible}`);
-			console.log(`EditorPanel: Panel active: ${webviewPanel.active}`);
+			this.logger.info('EXTENSION', '=== CUSTOM EDITOR RESOLVE START ===');
+			this.logger.info('EXTENSION', `EditorPanel: Resolving custom text editor for ${document.fileName}`);
+			this.logger.info('EXTENSION', `EditorPanel: Document URI: ${document.uri.toString()}`);
+			this.logger.info('EXTENSION', `EditorPanel: Webview panel viewType: ${webviewPanel.viewType}`);
+			this.logger.info('EXTENSION', `EditorPanel: Panel title: ${webviewPanel.title}`);
+			this.logger.info('EXTENSION', `EditorPanel: Panel visible: ${webviewPanel.visible}`);
+			this.logger.info('EXTENSION', `EditorPanel: Panel active: ${webviewPanel.active}`);
 
 			// Use the provided webview panel instead of creating a new one
 			this.currentPanel = webviewPanel;
@@ -331,11 +333,11 @@ export class EditorPanelProvider {
 					);
 				}
 			} catch (error) {
-				console.warn('EditorPanel: Failed to connect language service bridge in custom editor:', error);
+				this.logger.warn('EXTENSION', 'EditorPanel: Failed to connect language service bridge in custom editor:', error);
 			}
 
 		} catch (error) {
-			console.error('EditorPanel: Failed to resolve custom text editor:', error);
+			this.logger.error('EXTENSION', 'EditorPanel: Failed to resolve custom text editor:', error);
 			// Show error message to user
 			webviewPanel.webview.html = this.getErrorHtml(error);
 		}
@@ -359,7 +361,7 @@ export class EditorPanelProvider {
 	 */
 	private async updateDocumentFromWebview(text: string): Promise<void> {
 		if (!this.currentDocument) {
-			console.warn('EditorPanel: No current document to update');
+			this.logger.warn('EXTENSION', 'EditorPanel: No current document to update');
 			return;
 		}
 
@@ -377,10 +379,10 @@ export class EditorPanelProvider {
 			// Apply the edit
 			const success = await vscode.workspace.applyEdit(edit);
 			if (!success) {
-				console.error('EditorPanel: Failed to apply document edit');
+				this.logger.error('EXTENSION', 'EditorPanel: Failed to apply document edit');
 			}
 		} catch (error) {
-			console.error('EditorPanel: Error updating document from webview:', error);
+			this.logger.error('EXTENSION', 'EditorPanel: Error updating document from webview:', error);
 		}
 	}
 
@@ -424,7 +426,7 @@ export class EditorPanelProvider {
 	 */
 	private createNullLanguageServiceBridge(): any {
 		return {
-			connectWebview: () => console.warn('Language service not available'),
+			connectWebview: () => this.logger.warn('EXTENSION', 'Language service not available'),
 			disconnectWebview: () => {},
 			dispose: () => {},
 			getLanguageService: () => ({
@@ -445,7 +447,7 @@ export class EditorPanelProvider {
 			const { getService } = require('../sys/serviceRegistry');
 			return getService('deviceManager');
 		} catch (error) {
-			console.warn('Debug manager not available:', error);
+			this.logger.warn('EXTENSION', 'Debug manager not available:', error);
 			return null;
 		}
 	}
@@ -459,7 +461,7 @@ export class EditorPanelProvider {
 			const { getService } = require('../sys/serviceRegistry');
 			return getService('languageClient');
 		} catch (error) {
-			console.warn('Language client not available:', error);
+			this.logger.warn('EXTENSION', 'Language client not available:', error);
 			return null;
 		}
 	}

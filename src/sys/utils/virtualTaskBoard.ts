@@ -2,7 +2,7 @@
 // Virtual Board using VS Code Tasks and PyScript WASM in background
 
 import * as vscode from 'vscode';
-import * as path from 'path';
+// import * as path from 'path'; // Migrated to VS Code URI-based path handling
 import { IBoard, BoardType, BoardConnectionState, BoardCapabilities, ExecutionResult, FileInfo, DeviceInfo } from '../boardManager';
 import { PythonEnvManager } from '../../sys/pythonEnvManager';
 
@@ -42,9 +42,9 @@ class PyScriptTaskExecutor {
             operation,
             board: this.boardType
         };
-        
+
         // Use the PyScript task script (we'll create this)
-        const scriptPath = path.join(this.context.extensionPath, 'scripts', 'pyscript-task.js');
+        const scriptPath = vscode.Uri.joinPath(vscode.Uri.file(this.context.extensionPath), 'scripts', 'pyscript-task.js').fsPath;
         
         const task = new vscode.Task(
             taskDef,
@@ -70,10 +70,10 @@ class PyScriptTaskExecutor {
     
     public async executeCode(code: string): Promise<{ success: boolean; output?: string; error?: string }> {
         // Create a temporary file with the code
-        const tempDir = path.join(this.context.globalStorageUri.fsPath, 'pyscript-temp');
+        const tempDir = vscode.Uri.joinPath(this.context.globalStorageUri, 'pyscript-temp').fsPath;
         await vscode.workspace.fs.createDirectory(vscode.Uri.file(tempDir));
         
-        const tempFile = path.join(tempDir, `exec_${Date.now()}.py`);
+        const tempFile = vscode.Uri.joinPath(vscode.Uri.file(tempDir), `exec_${Date.now()}.py`).fsPath;
         await vscode.workspace.fs.writeFile(
             vscode.Uri.file(tempFile), 
             Buffer.from(code, 'utf8')
@@ -111,8 +111,8 @@ class PyScriptTaskExecutor {
             file: codeFile,
             board: this.boardType
         };
-        
-        const scriptPath = path.join(this.context.extensionPath, 'scripts', 'pyscript-task.js');
+
+        const scriptPath = vscode.Uri.joinPath(vscode.Uri.file(this.context.extensionPath), 'scripts', 'pyscript-task.js').fsPath;
         
         return new vscode.Task(
             taskDef,

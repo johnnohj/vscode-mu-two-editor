@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
-import { 
-    BlinkaExecutionManager, 
-    ExecutionEnvironment, 
-    CodeExecutionRequest, 
-    ExecutionResult, 
+import {
+    BlinkaExecutionManager,
+    ExecutionEnvironment,
+    CodeExecutionRequest,
+    ExecutionResult,
     DualExecutionComparison,
-    BlinkaBoard 
+    BlinkaBoard
 } from './executionManager';
 import { UnifiedDebugManager } from '../../sys/unifiedDebugManager';
+import { getLogger } from '../../sys/unifiedLogger';
 
 /**
  * Execution mode selection for user interface
@@ -641,24 +642,17 @@ export class DualExecutionInterface {
      * Show execution output in output channel
      */
     private async showExecutionOutput(result: ExecutionResult): Promise<void> {
-        const outputChannel = vscode.window.createOutputChannel('Mu 2 Execution Results');
-        outputChannel.clear();
-        outputChannel.appendLine(`${result.environment} Execution Results`);
-        outputChannel.appendLine('='.repeat(50));
-        outputChannel.appendLine(`Status: ${result.success ? 'Success' : 'Failed'}`);
-        outputChannel.appendLine(`Execution Time: ${result.executionTime}ms`);
-        outputChannel.appendLine(`Device: ${result.deviceId || 'Simulation'}`);
-        outputChannel.appendLine('');
-        outputChannel.appendLine('Output:');
-        outputChannel.appendLine(result.output || '(no output)');
-        
-        if (result.error) {
-            outputChannel.appendLine('');
-            outputChannel.appendLine('Error:');
-            outputChannel.appendLine(result.error);
-        }
+        const logger = getLogger();
+        logger.info('EXECUTION', `${result.environment} Execution Results`);
+        logger.info('EXECUTION', '='.repeat(50));
+        logger.info('EXECUTION', `Status: ${result.success ? 'Success' : 'Failed'}`);
+        logger.info('EXECUTION', `Execution Time: ${result.executionTime}ms`);
+        logger.info('EXECUTION', `Device: ${result.deviceId || 'Simulation'}`);
+        logger.info('EXECUTION', `Output: ${result.output || '(no output)'}`);
 
-        outputChannel.show();
+        if (result.error) {
+            logger.error('EXECUTION', `Error: ${result.error}`);
+        }
     }
 
     /**

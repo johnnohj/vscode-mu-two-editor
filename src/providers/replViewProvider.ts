@@ -9,6 +9,9 @@ import { TerminalHistoryManager } from './helpers/historyManager';
 import { getNonce } from '../sys/utils/webview';
 import { LanguageServiceBridge } from './language/core/LanguageServiceBridge';
 import { WasmRuntimeManager, WasmExecutionResult } from '../sys/wasmRuntimeManager';
+import { getLogger } from '../sys/unifiedLogger';
+import { MuTwoRuntimeCoordinator } from '../sys/unifiedRuntimeCoordinator';
+import { getService } from '../sys/serviceRegistry';
 
 /**
  * REPL View Provider with Hybrid PTY Backend support
@@ -21,14 +24,14 @@ import { WasmRuntimeManager, WasmExecutionResult } from '../sys/wasmRuntimeManag
  */
 export class ReplViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'muTwo.replView';
-	
+
 	private extensionUri: vscode.Uri;
 	private extensionContext: vscode.ExtensionContext;
 	private workspaceValidator?: WorkspaceValidator;
 	private workspaceManager?: MuTwoWorkspaceManager;
 	private historyManager: TerminalHistoryManager;
 	private boardManager?: BoardManager;
-	
+
 	private deviceConnectionEnabled: boolean = true;
 	private view?: vscode.WebviewView;
 	private isWebviewReady = false;
@@ -36,6 +39,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	private hybridModeEnabled: boolean = true;
 	// Hybrid terminal functionality removed (dependencies missing)
 	private languageServiceBridge: LanguageServiceBridge;
+	private logger = getLogger();
 
 	// WASM Runtime Management
 	private wasmRuntimeManager?: WasmRuntimeManager;
@@ -64,21 +68,21 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 				enableSignatureHelp: true,
 				defaultBoard: 'circuitplayground_express' // TODO: Get from device detection
 			});
-			console.log('REPL: Language service bridge initialized successfully');
+			this.logger.info('EXTENSION', 'REPL: Language service bridge initialized successfully');
 		} catch (error) {
-			console.error('REPL: Failed to initialize language service bridge:', error);
+			this.logger.error('EXTENSION', 'REPL: Failed to initialize language service bridge:', error);
 			// Create a null object that provides safe method calls
 			this.languageServiceBridge = this.createNullLanguageServiceBridge();
 		}
 		
 		// Hybrid terminal functionality removed (dependencies missing)
 		this.hybridModeEnabled = false;
-		console.log('Hybrid terminal functionality disabled - dependencies removed');
+		this.logger.warn('EXTENSION', 'Hybrid terminal functionality disabled - dependencies removed');
 		
 		// Headless processor functionality removed (was causing activation errors)
 		
 		// Simplified initialization - removed complex dependencies
-		console.log('REPL View Provider initialized with simplified architecture');
+		this.logger.info('EXTENSION', 'REPL View Provider initialized with simplified architecture');
 	}
 
 	/**
@@ -157,10 +161,10 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 					webviewView.webview,
 					'muTwo.replView'
 				);
-				console.log('REPL: Language service bridge connected successfully');
+				this.logger.info('EXTENSION', 'REPL: Language service bridge connected successfully');
 			}
 		} catch (error) {
-			console.warn('REPL: Failed to connect language service bridge:', error);
+			this.logger.warn('EXTENSION', 'REPL: Failed to connect language service bridge:', error);
 		}
 
 		// Handle messages from webview
@@ -171,7 +175,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 		// Set up basic message handling
 		this.setupMessageHandling(webviewView);
 
-		console.log('REPL View Provider resolved successfully');
+		this.logger.info('EXTENSION', 'REPL View Provider resolved successfully');
 	}
 
 	/**
@@ -180,7 +184,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	private async performWorkspaceValidation(): Promise<void> {
 		// Check if workspace validator is available
 		if (!this.workspaceValidator) {
-			console.warn('REPL: Workspace validator not yet initialized, skipping validation');
+			this.logger.warn('EXTENSION', 'REPL: Workspace validator not yet initialized, skipping validation');
 			this.deviceConnectionEnabled = true;
 			return;
 		}
@@ -217,20 +221,20 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 */
 	private async updateWebviewContent(): Promise<void> {
 		if (!this.view) {
-			console.log('REPL: No webview available for content update');
+			this.logger.warn('EXTENSION', 'REPL: No webview available for content update');
 			return;
 		}
 
-		console.log('REPL: Updating webview content...');
+		this.logger.info('EXTENSION', 'REPL: Updating webview content...');
 		const permissions = this.workspaceValidator?.getDeviceConnectionPermissions();
 		const validationResult = this.extensionContext.workspaceState.get('workspaceValidation');
 
 		try {
 			const html = await this.getReplHtml(permissions, validationResult);
 			this.view.webview.html = html;
-			console.log('REPL: Webview HTML set successfully');
+			this.logger.info('EXTENSION', 'REPL: Webview HTML set successfully');
 		} catch (error) {
-			console.error('REPL: Failed to set webview HTML:', error);
+			this.logger.error('EXTENSION', 'REPL: Failed to set webview HTML:', error);
 			// Set fallback HTML to at least show the panel
 			this.view.webview.html = this.getFallbackHtml();
 		}
@@ -285,7 +289,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 					if (data && typeof data === 'object' && typeof data.type === 'string') {
 						await this.handleReplMessage(data);
 					} else {
-						console.warn('REPL: Ignoring message with invalid format:', data);
+						this.logger.warn('EXTENSION', 'REPL: Ignoring message with invalid format:', data);
 					}
 				}
 				break;
@@ -297,7 +301,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 */
 	private async handleEnableDeviceConnection(): Promise<void> {
 		if (!this.workspaceValidator) {
-			console.warn('REPL: Workspace validator not available');
+			this.logger.warn('EXTENSION', 'REPL: Workspace validator not available');
 			return;
 		}
 		const permissions = this.workspaceValidator.getDeviceConnectionPermissions();
@@ -356,12 +360,12 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 * Hybrid PTY backend functionality removed
 	 */
 	private async setupHybridBackend(webviewView: vscode.WebviewView): Promise<void> {
-		console.log('Hybrid PTY backend functionality removed - skipping setup');
+		this.logger.warn('EXTENSION', 'Hybrid PTY backend functionality removed - skipping setup');
 		return;
 	}
 	// Hybrid message handling functionality removed
 	private setupHybridMessageHandling(webviewView: vscode.WebviewView): void {
-		console.log('Hybrid message handling functionality removed - skipping setup');
+		this.logger.warn('EXTENSION', 'Hybrid message handling functionality removed - skipping setup');
 		return;
 	}
 
@@ -369,7 +373,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 * Hybrid mode functionality removed
 	 */
 	private async toggleHybridMode(): Promise<void> {
-		console.warn('Hybrid mode functionality removed');
+		this.logger.warn('EXTENSION', 'Hybrid mode functionality removed');
 		vscode.window.showWarningMessage('Hybrid mode functionality is not available');
 	}
 
@@ -377,21 +381,21 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 * Hybrid mode update functionality removed
 	 */
 	private sendHybridModeUpdate(webviewView: vscode.WebviewView): void {
-		console.log('Hybrid mode update functionality removed');
+		this.logger.warn('EXTENSION', 'Hybrid mode update functionality removed');
 	}
 
 	/**
 	 * Memory usage update functionality removed
 	 */
 	private sendMemoryUsageUpdate(webviewView: vscode.WebviewView): void {
-		console.log('Memory usage update functionality removed');
+		this.logger.warn('EXTENSION', 'Memory usage update functionality removed');
 	}
 
 	/**
 	 * Hybrid instance functionality removed
 	 */
 	getCurrentHybridInstance(): any {
-		console.warn('Hybrid instance functionality removed');
+		this.logger.warn('EXTENSION', 'Hybrid instance functionality removed');
 		return undefined;
 	}
 
@@ -406,7 +410,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 * Performance metrics functionality removed
 	 */
 	getPerformanceMetrics(): any {
-		console.log('Performance metrics functionality removed');
+		this.logger.warn('EXTENSION', 'Performance metrics functionality removed');
 		return null;
 	}
 
@@ -417,18 +421,18 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 		const config = vscode.workspace.getConfiguration('muTwo.terminal');
 		this.hybridModeEnabled = config.get('enableHybridMode', true);
 		
-		console.log(`Loaded hybrid configuration: hybridModeEnabled=${this.hybridModeEnabled}`);
+		this.logger.info('EXTENSION', `Loaded hybrid configuration: hybridModeEnabled=${this.hybridModeEnabled}`);
 	}
 
 	/**
 	 * Handle REPL-specific messages when device connection is enabled
 	 */
 	private async handleReplMessage(data: any): Promise<void> {
-		console.log('REPL message received:', data);
+		this.logger.info('EXTENSION', 'REPL message received:', data);
 
 		// Validate message structure
 		if (!data || typeof data.type !== 'string') {
-			console.error('Invalid message format - missing or invalid type:', data);
+			this.logger.error('EXTENSION', 'Invalid message format - missing or invalid type:', data);
 			return;
 		}
 
@@ -584,14 +588,14 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 				try {
 					this.workspaceValidator = new WorkspaceValidator(extensionContext);
 					this.workspaceManager = new MuTwoWorkspaceManager(extensionContext);
-					console.log('REPL: Workspace services initialized successfully');
+					this.logger.info('EXTENSION', 'REPL: Workspace services initialized successfully');
 				} catch (error) {
-					console.error('REPL: Failed to initialize workspace services:', error);
+					this.logger.error('EXTENSION', 'REPL: Failed to initialize workspace services:', error);
 					// Continue without workspace services - will use fallbacks
 				}
 			}, 100);
 		} catch (error) {
-			console.error('REPL: Failed to schedule workspace services initialization:', error);
+			this.logger.error('EXTENSION', 'REPL: Failed to schedule workspace services initialization:', error);
 		}
 	}
 
@@ -600,7 +604,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 */
 	private createNullLanguageServiceBridge(): any {
 		return {
-			connectWebview: () => console.warn('REPL: Language service not available'),
+			connectWebview: () => this.logger.warn('EXTENSION', 'REPL: Language service not available'),
 			disconnectWebview: () => {},
 			dispose: () => {}
 		};
@@ -615,7 +619,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 			const { getService } = require('../sys/serviceRegistry');
 			return getService('deviceManager');
 		} catch (error) {
-			console.warn('Debug manager not available:', error);
+			this.logger.warn('EXTENSION', 'Debug manager not available:', error);
 			return null;
 		}
 	}
@@ -629,7 +633,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 			const { getService } = require('../sys/serviceRegistry');
 			return getService('languageClient');
 		} catch (error) {
-			console.warn('Language client not available:', error);
+			this.logger.warn('EXTENSION', 'Language client not available:', error);
 			return null;
 		}
 	}
@@ -638,10 +642,10 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 * Runtime Management Methods
 	 */
 	private async handleRuntimeSwitch(runtime: string): Promise<void> {
-		console.log(`REPL: Switching to runtime: ${runtime}`);
+		this.logger.info('EXTENSION', `REPL: Switching to runtime: ${runtime}`);
 
 		if (runtime === this.currentRuntime) {
-			console.log('REPL: Already on specified runtime');
+			this.logger.info('EXTENSION', 'REPL: Already on specified runtime');
 			return;
 		}
 
@@ -662,7 +666,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async handleRuntimeConnect(runtime: string): Promise<void> {
-		console.log(`REPL: Connecting to runtime: ${runtime}`);
+		this.logger.info('EXTENSION', `REPL: Connecting to runtime: ${runtime}`);
 
 		this.runtimeStatus = 'connecting';
 		this.sendMessage({
@@ -694,7 +698,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 			});
 
 		} catch (error) {
-			console.error(`REPL: Failed to connect to ${runtime}:`, error);
+			this.logger.error('EXTENSION', `REPL: Failed to connect to ${runtime}:`, error);
 			this.runtimeStatus = 'error';
 			this.sendMessage({
 				type: 'runtime.error',
@@ -705,7 +709,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async handleRuntimeDisconnect(runtime: string): Promise<void> {
-		console.log(`REPL: Disconnecting from runtime: ${runtime}`);
+		this.logger.info('EXTENSION', `REPL: Disconnecting from runtime: ${runtime}`);
 
 		try {
 			switch (runtime) {
@@ -728,7 +732,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 			});
 
 		} catch (error) {
-			console.error(`REPL: Failed to disconnect from ${runtime}:`, error);
+			this.logger.error('EXTENSION', `REPL: Failed to disconnect from ${runtime}:`, error);
 		}
 	}
 
@@ -753,7 +757,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 					break;
 			}
 		} catch (error) {
-			console.error(`REPL: Command execution failed for ${activeRuntime}:`, error);
+			this.logger.error('EXTENSION', `REPL: Command execution failed for ${activeRuntime}:`, error);
 			this.sendMessage({
 				type: 'display',
 				data: { content: `Error: ${error}\n` }
@@ -768,20 +772,33 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 		});
 
 		if (!this.wasmRuntimeManager) {
-			this.wasmRuntimeManager = new WasmRuntimeManager({
-				enableHardwareSimulation: true,
-				debugMode: vscode.workspace.getConfiguration('muTwo.wasm').get('debugMode', false)
-			}, this.extensionContext);
-
-			// Set up hardware state monitoring
-			this.wasmRuntimeManager.on('codeExecuted', (result: WasmExecutionResult) => {
-				if (result.hardwareChanges && result.hardwareChanges.length > 0) {
-					this.sendHardwareStateUpdate();
+			try {
+				// Use shared WASM runtime from unified coordinator
+				const coordinator = getService<MuTwoRuntimeCoordinator>('runtimeCoordinator');
+				if (coordinator) {
+					this.wasmRuntimeManager = await coordinator.getSharedWasmRuntime();
+					this.logger.info('EXTENSION', 'ReplViewProvider: Using shared WASM runtime from coordinator');
+				} else {
+					// Fallback: create runtime directly if coordinator not available
+					this.logger.warn('EXTENSION', 'ReplViewProvider: Coordinator not available, creating runtime directly');
+					this.wasmRuntimeManager = new WasmRuntimeManager({
+						enableHardwareSimulation: true,
+						debugMode: vscode.workspace.getConfiguration('muTwo.wasm').get('debugMode', false)
+					}, this.extensionContext);
+					await this.wasmRuntimeManager.initialize();
 				}
-			});
-		}
 
-		await this.wasmRuntimeManager.initialize();
+				// Set up hardware state monitoring
+				this.wasmRuntimeManager.on('codeExecuted', (result: WasmExecutionResult) => {
+					if (result.hardwareChanges && result.hardwareChanges.length > 0) {
+						this.sendHardwareStateUpdate();
+					}
+				});
+			} catch (error) {
+				this.logger.error('EXTENSION', 'ReplViewProvider: Failed to get WASM runtime', error);
+				throw error;
+			}
+		}
 
 		this.sendMessage({
 			type: 'wasm.initializationComplete',
@@ -829,18 +846,18 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 				hardwareState: hardwareState
 			});
 		} catch (error) {
-			console.warn('REPL: Failed to get hardware state:', error);
+			this.logger.warn('EXTENSION', 'REPL: Failed to get hardware state:', error);
 		}
 	}
 
 	// Blinka Runtime Methods (placeholder for future implementation)
 	private async connectBlinkaRuntime(): Promise<void> {
-		console.log('REPL: Blinka runtime connection - using existing serial logic');
+		this.logger.info('EXTENSION', 'REPL: Blinka runtime connection - using existing serial logic');
 		// This would connect to the existing serial/board manager logic
 	}
 
 	private async disconnectBlinkaRuntime(): Promise<void> {
-		console.log('REPL: Blinka runtime disconnection');
+		this.logger.info('EXTENSION', 'REPL: Blinka runtime disconnection');
 		// This would disconnect from serial/board manager
 	}
 
@@ -860,7 +877,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async disconnectPyScriptRuntime(): Promise<void> {
-		console.log('REPL: PyScript runtime disconnection');
+		this.logger.info('EXTENSION', 'REPL: PyScript runtime disconnection');
 	}
 
 	private async executePyScriptCommand(command: string): Promise<void> {
@@ -945,6 +962,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	<script nonce="${nonce}">
 		const vscode = acquireVsCodeApi();
 		vscode.postMessage({ type: 'webviewReady' });
+		// Note: This is in webview script, not extension - keeping as console.log
 		console.log('Fallback REPL HTML loaded');
 	</script>
 </body>
@@ -965,7 +983,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 		const styleUri = this.view.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'public', 'repl', 'xterm.css'));
 		const blinkafontUri = this.view.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'assets', 'font_experiments', 'FreeMono-Terminal-Blinka.ttf'));
 
-		console.log('REPL: Generated URIs - script:', scriptUri.toString(), 'style:', styleUri.toString(), 'font:', blinkafontUri.toString());
+		this.logger.info('EXTENSION', 'REPL: Generated URIs - script:', scriptUri.toString(), 'style:', styleUri.toString(), 'font:', blinkafontUri.toString());
 
 		if (!scriptUri || !styleUri || !blinkafontUri) {
 			throw new Error('REPL: Failed to generate webview URIs');
@@ -1075,7 +1093,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 * Execute headless command - stub implementation (HeadlessTerminalProcessor removed)
 	 */
 	public async executeHeadlessCommand(command: string): Promise<any> {
-		console.warn('HeadlessTerminalProcessor functionality removed - command ignored:', command);
+		this.logger.warn('EXTENSION', 'HeadlessTerminalProcessor functionality removed - command ignored:', command);
 		return { output: '', success: false, error: 'HeadlessTerminalProcessor not available' };
 	}
 
@@ -1083,7 +1101,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 	 * Get headless state - stub implementation (HeadlessTerminalProcessor removed)
 	 */
 	public getHeadlessState(): any {
-		console.warn('HeadlessTerminalProcessor functionality removed');
+		this.logger.warn('EXTENSION', 'HeadlessTerminalProcessor functionality removed');
 		return { status: 'unavailable', message: 'HeadlessTerminalProcessor not available' };
 	}
 }

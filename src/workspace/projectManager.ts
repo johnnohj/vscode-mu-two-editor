@@ -1,16 +1,18 @@
 import * as vscode from 'vscode';
 import { FileOperations } from './filesystem/fileOperations';
 import { LibraryManager } from './integration/libraryManager';
+import { getLogger } from '../sys/unifiedLogger';
 
 // Project Management System - Jukebox/CD Changer Pattern
 export class ProjectManager implements vscode.Disposable {
     private _disposables: vscode.Disposable[] = [];
     private _currentProjectName: string | null = null;
     private _libraryManager: LibraryManager;
+    private logger = getLogger();
 
     constructor(
         private context: vscode.ExtensionContext,
-        private outputChannel: vscode.OutputChannel
+        // Using unified logger instead of createOutputChannel
     ) {
         this._libraryManager = new LibraryManager();
     }
@@ -61,12 +63,12 @@ export class ProjectManager implements vscode.Disposable {
             await FileOperations.copyDirectoryContents(projectDir, currentDir);
 
             this._currentProjectName = projectName;
-            this.outputChannel.appendLine(`Loaded project: ${projectName}`);
+            this.logger.info('WORKSPACE', `Loaded project: ${projectName}`);
             vscode.window.showInformationMessage(`📁 Project '${projectName}' loaded`);
 
             return true;
         } catch (error) {
-            this.outputChannel.appendLine(`Failed to load project: ${error}`);
+            this.logger.error('WORKSPACE', `Failed to load project: ${error}`);
             vscode.window.showErrorMessage(`Failed to load project: ${error}`);
             return false;
         }
@@ -131,12 +133,12 @@ export class ProjectManager implements vscode.Disposable {
             await this._libraryManager.updateProjectLibraries(projectDir);
 
             this._currentProjectName = projectName;
-            this.outputChannel.appendLine(`Saved project: ${projectName}`);
+            this.logger.info('WORKSPACE', `Saved project: ${projectName}`);
             vscode.window.showInformationMessage(`💾 Project '${projectName}' saved`);
 
             return true;
         } catch (error) {
-            this.outputChannel.appendLine(`Failed to save project: ${error}`);
+            this.logger.error('WORKSPACE', `Failed to save project: ${error}`);
             vscode.window.showErrorMessage(`Failed to save project: ${error}`);
             return false;
         }
@@ -169,12 +171,12 @@ export class ProjectManager implements vscode.Disposable {
             await FileOperations.createBasicProjectStructure(currentDir);
 
             this._currentProjectName = null;
-            this.outputChannel.appendLine('Created new project');
+            this.logger.info('WORKSPACE', 'Created new project');
             vscode.window.showInformationMessage('✨ New project created');
 
             return true;
         } catch (error) {
-            this.outputChannel.appendLine(`Failed to create new project: ${error}`);
+            this.logger.error('WORKSPACE', `Failed to create new project: ${error}`);
             vscode.window.showErrorMessage(`Failed to create new project: ${error}`);
             return false;
         }
@@ -203,7 +205,7 @@ export class ProjectManager implements vscode.Disposable {
                 return []; // Projects directory doesn't exist yet
             }
         } catch (error) {
-            this.outputChannel.appendLine(`Failed to list projects: ${error}`);
+            this.logger.error('WORKSPACE', `Failed to list projects: ${error}`);
             return [];
         }
     }
@@ -242,8 +244,8 @@ export class ProjectManager implements vscode.Disposable {
                 await FileOperations.clearDirectory(projectDir);
                 await FileOperations.copyDirectoryContents(currentDir, projectDir);
                 await this._libraryManager.updateProjectLibraries(projectDir);
-                
-                this.outputChannel.appendLine(`Backed up current project to: ${this._currentProjectName}`);
+
+                this.logger.info('WORKSPACE', `Backed up current project to: ${this._currentProjectName}`);
             } else {
                 // Check if there's unsaved work that needs naming
                 const hasSignificantContent = await FileOperations.hasSignificantContent(currentDir);
@@ -266,23 +268,23 @@ export class ProjectManager implements vscode.Disposable {
                     await FileOperations.clearDirectory(projectDir);
                     await FileOperations.copyDirectoryContents(currentDir, projectDir);
                     await this._libraryManager.updateProjectLibraries(projectDir);
-                    
+
                     this._currentProjectName = projectName;
-                    this.outputChannel.appendLine(`Named and backed up current project: ${projectName}`);
+                    this.logger.info('WORKSPACE', `Named and backed up current project: ${projectName}`);
                 } else {
                     // Save to .current directory
                     const currentBackupDir = vscode.Uri.joinPath(projectsDir, '.current');
                     await FileOperations.ensureDirectoryExists(currentBackupDir);
                     await FileOperations.clearDirectory(currentBackupDir);
                     await FileOperations.copyDirectoryContents(currentDir, currentBackupDir);
-                    
-                    this.outputChannel.appendLine('Backed up current project to .current');
+
+                    this.logger.info('WORKSPACE', 'Backed up current project to .current');
                 }
             }
 
             return true;
         } catch (error) {
-            this.outputChannel.appendLine(`Failed to backup current project: ${error}`);
+            this.logger.error('WORKSPACE', `Failed to backup current project: ${error}`);
             vscode.window.showErrorMessage(`Failed to backup current project: ${error}`);
             return false;
         }

@@ -7,6 +7,7 @@ import { MuTwoLanguageClient } from '../devices/core/client';
 import { CtpyFileSystemProvider } from './fileSystemProvider';
 import { MuDeviceDetector, IDevice, MuDevice } from '../devices/core/deviceDetector';
 import { BoardFactory } from './utils/usbBoard';
+import { getLogger } from './unifiedLogger';
 
 export type BoardType = 'usb' | 'ble' | 'virtual';
 
@@ -341,7 +342,7 @@ export class BoardManager {
     public readonly onBoardConnectionChanged = this._onBoardConnectionChanged.event;
     
     private _workspaceBoardMap = new Map<string, string>(); // workspace -> boardId
-    private _outputChannel: vscode.OutputChannel;
+    private _logger = getLogger();
     
     constructor(
         private context: vscode.ExtensionContext,
@@ -350,7 +351,7 @@ export class BoardManager {
         private fileSystemProvider: CtpyFileSystemProvider,
         private deviceDetector: MuDeviceDetector
     ) {
-        this._outputChannel = vscode.window.createOutputChannel('Board Manager');
+        // Using unified logger instead of separate output channel
         this.loadWorkspaceBoardMappings();
     }
     
@@ -466,50 +467,49 @@ export class BoardManager {
      */
     public async detectDevices(): Promise<void> {
         try {
-            this._outputChannel.show();
-            this._outputChannel.appendLine('Detecting CircuitPython devices...');
+            this._logger.info('BOARD_MANAGER', 'Detecting CircuitPython devices...');
             
             const result = await this.deviceDetector.detectDevices();
             
-            this._outputChannel.appendLine(`\nDetection Results:`);
-            this._outputChannel.appendLine(`- Total serial devices: ${result.totalDevices}`);
-            this._outputChannel.appendLine(`- CircuitPython devices: ${result.circuitPythonDevices}`);
+            this._logger.info('BOARD_MANAGER', '\nDetection Results:');
+            this._logger.info('BOARD_MANAGER', `- Total serial devices: ${result.totalDevices}`);
+            this._logger.info('BOARD_MANAGER', `- CircuitPython devices: ${result.circuitPythonDevices}`);
             
             if (result.devices.length > 0) {
-                this._outputChannel.appendLine(`\nFound CircuitPython devices:`);
+                this._logger.info('BOARD_MANAGER', '\nFound CircuitPython devices:');
                 for (let i = 0; i < result.devices.length; i++) {
                     const device = result.devices[i];
-                    this._outputChannel.appendLine(`${i + 1}. ${device.displayName}`);
-                    this._outputChannel.appendLine(`   Path: ${device.path}`);
-                    this._outputChannel.appendLine(`   Confidence: ${device.confidence}`);
+                    this._logger.info('BOARD_MANAGER', `${i + 1}. ${device.displayName}`);
+                    this._logger.info('BOARD_MANAGER', `   Path: ${device.path}`);
+                    this._logger.info('BOARD_MANAGER', `   Confidence: ${device.confidence}`);
                     if (device.boardId) {
-                        this._outputChannel.appendLine(`   Board: ${device.boardId}`);
+                        this._logger.info('BOARD_MANAGER', `   Board: ${device.boardId}`);
                     }
                     if (device.hasConflict) {
-                        this._outputChannel.appendLine(`   ⚠️  Has VID:PID conflicts`);
+                        this._logger.warn('BOARD_MANAGER', `   ⚠️  Has VID:PID conflicts`);
                     }
                 }
             }
 
             if (result.conflicts.length > 0) {
-                this._outputChannel.appendLine(`\nVID:PID Conflicts detected:`);
+                this._logger.warn('BOARD_MANAGER', '\nVID:PID Conflicts detected:');
                 result.conflicts.forEach((conflict, i) => {
-                    this._outputChannel.appendLine(`${i + 1}. ${conflict.vidPid} - Possible boards: ${conflict.conflictingBoards.join(', ')}`);
+                    this._logger.warn('BOARD_MANAGER', `${i + 1}. ${conflict.vidPid} - Possible boards: ${conflict.conflictingBoards.join(', ')}`);
                 });
             }
 
             const stats = this.deviceDetector.getDatabaseStats();
-            this._outputChannel.appendLine(`\nDatabase Statistics:`);
-            this._outputChannel.appendLine(`- Total boards in database: ${stats.totalBoards}`);
-            this._outputChannel.appendLine(`- Boards with USB config: ${stats.boardsWithUsb}`);
-            this._outputChannel.appendLine(`- Known VID:PID combinations: ${stats.uniqueVidPids}`);
+            this._logger.info('BOARD_MANAGER', '\nDatabase Statistics:');
+            this._logger.info('BOARD_MANAGER', `- Total boards in database: ${stats.totalBoards}`);
+            this._logger.info('BOARD_MANAGER', `- Boards with USB config: ${stats.boardsWithUsb}`);
+            this._logger.info('BOARD_MANAGER', `- Known VID:PID combinations: ${stats.uniqueVidPids}`);
 
             // Update our board registry
             await this.refreshDevices();
 
         } catch (error) {
             vscode.window.showErrorMessage(`Device detection failed: ${error}`);
-            this._outputChannel.appendLine(`Error: ${error}`);
+            this._logger.error('BOARD_MANAGER', `Error: ${error}`);
         }
     }
 
@@ -646,7 +646,7 @@ export class BoardManager {
         
         await this.saveWorkspaceBoardMappings();
         
-        this._outputChannel.appendLine(`Associated board ${boardId} with workspace: ${workspaceKey}`);
+        this._logger.info('BOARD_MANAGER', `Associated board ${boardId} with workspace: ${workspaceKey}`);
         vscode.window.showInformationMessage(`Board associated with this workspace`);
     }
 
@@ -722,9 +722,9 @@ export class BoardManager {
         try {
             const mappings = this.context.globalState.get<Record<string, string>>('workspaceBoardMappings', {});
             this._workspaceBoardMap = new Map(Object.entries(mappings));
-            this._outputChannel.appendLine(`Loaded ${this._workspaceBoardMap.size} workspace-board mappings`);
+            this._logger.info('BOARD_MANAGER', `Loaded ${this._workspaceBoardMap.size} workspace-board mappings`);
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to load workspace mappings: ${error}`);
+            this._logger.error('BOARD_MANAGER', `Failed to load workspace mappings: ${error}`);
         }
     }
 
@@ -735,9 +735,9 @@ export class BoardManager {
         try {
             const mappings = Object.fromEntries(this._workspaceBoardMap);
             await this.context.globalState.update('workspaceBoardMappings', mappings);
-            this._outputChannel.appendLine(`Saved ${this._workspaceBoardMap.size} workspace-board mappings`);
+            this._logger.info('BOARD_MANAGER', `Saved ${this._workspaceBoardMap.size} workspace-board mappings`);
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to save workspace mappings: ${error}`);
+            this._logger.error('BOARD_MANAGER', `Failed to save workspace mappings: ${error}`);
         }
     }
 
@@ -747,6 +747,6 @@ export class BoardManager {
         this._onBoardAdded.dispose();
         this._onBoardRemoved.dispose();
         this._onBoardConnectionChanged.dispose();
-        this._outputChannel.dispose();
+        // Using unified logger - no disposal needed
     }
 }

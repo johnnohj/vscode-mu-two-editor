@@ -1,5 +1,6 @@
 // File: src/app/terminalHistoryManager.ts
 import * as vscode from 'vscode';
+import { getLogger } from '../../sys/unifiedLogger';
 // import { SerialMessage } from './serialProvider'; // File deleted - using any for now
 type SerialMessage = any;
 
@@ -20,6 +21,7 @@ export class TerminalHistoryManager implements vscode.Disposable {
   private _historyFile: vscode.Uri;
   private _commandsFile: vscode.Uri;
   private _loggingEnabled = false;
+  private logger = getLogger();
 
   constructor(private _context: vscode.ExtensionContext) {
     this._workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri || _context.globalStorageUri;
@@ -137,7 +139,7 @@ export class TerminalHistoryManager implements vscode.Disposable {
         }
       } catch (e) {
         // File doesn't exist or is corrupted, start fresh
-        console.log('History file not found or corrupted, starting fresh', e);
+        this.logger.warn('EXTENSION', 'History file not found or corrupted, starting fresh', e);
       }
 
       // Load commands
@@ -151,10 +153,10 @@ export class TerminalHistoryManager implements vscode.Disposable {
           this._commandHistory = parsed.commands || [];
         }
       } catch (e) {
-        console.log('Commands file not found or corrupted, starting fresh', e);
+        this.logger.warn('EXTENSION', 'Commands file not found or corrupted, starting fresh', e);
       }
     } catch (error) {
-      console.error('Error loading history:', error);
+      this.logger.error('EXTENSION', 'Error loading history:', error);
     }
   }
 
@@ -190,7 +192,7 @@ export class TerminalHistoryManager implements vscode.Disposable {
         new TextEncoder().encode(JSON.stringify(commandsContent, null, 2))
       );
     } catch (error) {
-      console.error('Error saving history:', error);
+      this.logger.error('EXTENSION', 'Error saving history:', error);
     }
   }
 

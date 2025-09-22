@@ -3,11 +3,12 @@ import { ProjectManager } from '../projectManager';
 import { BoardManager } from '../../sys/boardManager';
 import { LibraryManager } from '../integration/libraryManager';
 import { FileOperations } from './fileOperations';
+import { getLogger } from '../../sys/unifiedLogger';
 
 // Save-Twice Handler with Project Integration
 export class FileSaveTwiceHandler implements vscode.Disposable {
     private _disposables: vscode.Disposable[] = [];
-    private _outputChannel: vscode.OutputChannel;
+    private _logger = getLogger();
     private _libraryManager: LibraryManager;
 
     constructor(
@@ -15,7 +16,7 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
         private projectManager: ProjectManager,
         private boardManager: BoardManager
     ) {
-        this._outputChannel = vscode.window.createOutputChannel('Mu Two Save Twice');
+        // Using unified logger instead of createOutputChannel
         this._libraryManager = new LibraryManager();
         this.setupSaveHandler();
     }
@@ -44,7 +45,7 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
                 return; // Only handle code.py and main.py
             }
 
-            this._outputChannel.appendLine(`Processing save-twice for: ${fileName}`);
+            this._logger.info('WORKSPACE', `Processing save-twice for: ${fileName}`);
 
             // 1. Update project backup (replaces .board logic)
             await this.updateProjectBackup(document.uri);
@@ -57,12 +58,12 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
             if (connectedBoards.length > 0) {
                 await this.syncToConnectedBoards(document.uri, connectedBoards);
             } else {
-                this._outputChannel.appendLine('No connected CircuitPython boards - saved to project backup only');
+                this._logger.info('WORKSPACE', 'No connected CircuitPython boards - saved to project backup only');
                 vscode.window.showInformationMessage('💾 File saved to project backup (no board connected)');
             }
 
         } catch (error) {
-            this._outputChannel.appendLine(`Save-twice error: ${error}`);
+            this._logger.error('WORKSPACE', `Save-twice error: ${error}`);
         }
     }
 
@@ -82,10 +83,10 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
 
             if (currentProjectName) {
                 backupDir = vscode.Uri.joinPath(projectsDir, currentProjectName);
-                this._outputChannel.appendLine(`Backing up to project: ${currentProjectName}`);
+                this._logger.info('WORKSPACE', `Backing up to project: ${currentProjectName}`);
             } else {
                 backupDir = vscode.Uri.joinPath(projectsDir, '.current');
-                this._outputChannel.appendLine('Backing up to .current');
+                this._logger.info('WORKSPACE', 'Backing up to .current');
             }
 
             await FileOperations.ensureDirectoryExists(backupDir);
@@ -95,10 +96,10 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
             const backupFileUri = vscode.Uri.joinPath(backupDir, fileName);
 
             await vscode.workspace.fs.copy(savedFileUri, backupFileUri, { overwrite: true });
-            this._outputChannel.appendLine(`Backed up ${fileName} to project directory`);
+            this._logger.info('WORKSPACE', `Backed up ${fileName} to project directory`);
 
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to update project backup: ${error}`);
+            this._logger.error('WORKSPACE', `Failed to update project backup: ${error}`);
         }
     }
 
@@ -126,7 +127,7 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
             await this._libraryManager.generateLibraryManifest(currentLibDir, targetDir);
 
         } catch (error) {
-            this._outputChannel.appendLine(`Failed to update library manifest: ${error}`);
+            this._logger.error('WORKSPACE', `Failed to update library manifest: ${error}`);
         }
     }
 
@@ -152,12 +153,12 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
                     if (board.isConnected()) {
                         const content = await vscode.workspace.fs.readFile(savedFileUri);
                         await board.writeFile(fileName, content);
-                        this._outputChannel.appendLine(`Synced ${fileName} to ${board.name}`);
+                        this._logger.info('WORKSPACE', `Synced ${fileName} to ${board.name}`);
                     } else {
-                        this._outputChannel.appendLine(`Board ${board.name} is no longer connected`);
+                        this._logger.warn('WORKSPACE', `Board ${board.name} is no longer connected`);
                     }
                 } catch (error) {
-                    this._outputChannel.appendLine(`Failed to sync to ${board.name}: ${error}`);
+                    this._logger.error('WORKSPACE', `Failed to sync to ${board.name}: ${error}`);
                 }
             }
             
@@ -170,7 +171,7 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
     public dispose(): void {
         this._disposables.forEach(d => d.dispose());
         this._disposables = [];
-        this._outputChannel.dispose();
+        // Using unified logger - no manual disposal needed
         this._libraryManager.dispose();
     }
 }

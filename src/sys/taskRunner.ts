@@ -133,6 +133,8 @@ export class TaskRunner {
         // For output capture, we still need to use Node.js spawn as VS Code Tasks
         // don't provide direct stdout capture. This is used sparingly for cases
         // like 'pip list --format=json' where we need the actual output.
+		  // TODO: For something like pip, can we run a task/shell script that has Python/pip 
+		  // write/update a .json file, if that's more efficient than spawning processes?
 
         const { spawn } = await import('child_process');
 

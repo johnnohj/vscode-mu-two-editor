@@ -8,6 +8,9 @@
 import * as vscode from 'vscode';
 import { MuDeviceDetector, IDevice, MuDevice, DetectionResult } from '../../devices/core/deviceDetector';
 import { WasmRuntimeManager } from '../../sys/wasmRuntimeManager';
+import { getLogger } from '../../sys/unifiedLogger';
+import { MuTwoRuntimeCoordinator } from '../../sys/unifiedRuntimeCoordinator';
+import { getService } from '../../sys/serviceRegistry';
 
 export interface BoardAssociation {
 	device?: MuDevice;
@@ -30,6 +33,7 @@ export class BoardDetectionHelper {
 	private deviceDetector: MuDeviceDetector;
 	private wasmRuntimeManager?: WasmRuntimeManager;
 	private currentAssociation?: BoardAssociation;
+	private logger = getLogger();
 
 	constructor(private context: vscode.ExtensionContext) {
 		this.deviceDetector = new MuDeviceDetector();
@@ -40,7 +44,7 @@ export class BoardDetectionHelper {
 	 * Returns board association or creates virtual fallback
 	 */
 	async detectAndAssociate(): Promise<BoardAssociation> {
-		console.log('BoardDetectionHelper: Starting board detection and workspace association');
+		this.logger.info('EXTENSION', 'BoardDetectionHelper: Starting board detection and workspace association');
 
 		// Get current workspace
 		const workspace = this.getCurrentWorkspace();
@@ -51,7 +55,7 @@ export class BoardDetectionHelper {
 		// Attempt to detect physical boards
 		const physicalBoard = await this.detectPhysicalBoard(workspace);
 		if (physicalBoard) {
-			console.log(`BoardDetectionHelper: Found physical board ${physicalBoard.displayName}`);
+			this.logger.info('EXTENSION', `BoardDetectionHelper: Found physical board ${physicalBoard.displayName}`);
 			this.currentAssociation = {
 				device: physicalBoard,
 				workspace,
@@ -62,7 +66,7 @@ export class BoardDetectionHelper {
 		}
 
 		// Fallback to virtual board
-		console.log('BoardDetectionHelper: No physical board detected, creating virtual board fallback');
+		this.logger.info('EXTENSION', 'BoardDetectionHelper: No physical board detected, creating virtual board fallback');
 		this.currentAssociation = await this.createVirtualBoardFallback(workspace);
 		return this.currentAssociation;
 	}
@@ -89,7 +93,7 @@ export class BoardDetectionHelper {
 			const detectionResult: DetectionResult = await this.deviceDetector.detectDevices();
 
 			if (detectionResult.circuitPythonDevices.length === 0) {
-				console.log('BoardDetectionHelper: No CircuitPython devices detected');
+				this.logger.info('EXTENSION', 'BoardDetectionHelper: No CircuitPython devices detected');
 				return undefined;
 			}
 
@@ -104,7 +108,7 @@ export class BoardDetectionHelper {
 			// Fall back to any detected device
 			return detectionResult.circuitPythonDevices[0];
 		} catch (error) {
-			console.error('BoardDetectionHelper: Physical board detection failed:', error);
+			this.logger.error('EXTENSION', 'BoardDetectionHelper: Physical board detection failed:', error);
 			return undefined;
 		}
 	}
@@ -113,14 +117,29 @@ export class BoardDetectionHelper {
 	 * Create virtual board fallback using WASM runtime
 	 */
 	private async createVirtualBoardFallback(workspace: vscode.WorkspaceFolder): Promise<BoardAssociation> {
-		console.log('BoardDetectionHelper: Setting up WASM virtual board fallback');
+		this.logger.info('EXTENSION', 'BoardDetectionHelper: Setting up WASM virtual board fallback');
 
 		// Initialize WASM runtime manager if not already done
 		if (!this.wasmRuntimeManager) {
-			this.wasmRuntimeManager = new WasmRuntimeManager({
-				enableHardwareSimulation: true,
-				debugMode: true
-			}, this.context);
+			try {
+				// Use shared WASM runtime from unified coordinator
+				const coordinator = getService<MuTwoRuntimeCoordinator>('runtimeCoordinator');
+				if (coordinator) {
+					this.wasmRuntimeManager = await coordinator.getSharedWasmRuntime();
+					this.logger.info('EXTENSION', 'BoardDetectionHelper: Using shared WASM runtime from coordinator');
+				} else {
+					// Fallback: create runtime directly if coordinator not available
+					this.logger.warn('EXTENSION', 'BoardDetectionHelper: Coordinator not available, creating runtime directly');
+					this.wasmRuntimeManager = new WasmRuntimeManager({
+						enableHardwareSimulation: true,
+						debugMode: true
+					}, this.context);
+					await this.wasmRuntimeManager.initialize();
+				}
+			} catch (error) {
+				this.logger.error('EXTENSION', 'BoardDetectionHelper: Failed to get WASM runtime', error);
+				// Continue with virtual board setup even if WASM runtime fails
+			}
 		}
 
 		return {
@@ -158,8 +177,7 @@ export class BoardDetectionHelper {
 	dispose(): void {
 		this.deviceDetector.dispose();
 		if (this.wasmRuntimeManager) {
-			// TODO: Add dispose method to WasmRuntimeManager if not present
-			// this.wasmRuntimeManager.dispose();
+			this.wasmRuntimeManager.dispose();
 		}
 	}
 }

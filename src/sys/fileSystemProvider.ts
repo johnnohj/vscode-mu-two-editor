@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
+// import * as path from 'path'; // Migrated to VS Code URI-based path handling
 
 /**
  * Mu Two File System Provider
@@ -11,9 +11,12 @@ import * as path from 'path';
  * URI Format: ctpy://boardId/path/to/file.py
  * Example: ctpy://adafruit-qtpy-rp2040-12345678/code.py
  */
+
+// TODO: Migrate to 'mutwo://' URI scheme
 export class MuTwoFileSystemProvider implements vscode.FileSystemProvider {
 	private _emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
 	private _bufferedEvents: vscode.FileChangeEvent[] = [];
+	// TODO: Doesn't the vscode api have a 'fire soon' we should use instead?
 	private _fireSoonHandle?: NodeJS.Timer;
 
 	readonly onDidChangeFile: vscode.Event<vscode.FileChangeEvent[]> = this._emitter.event;
@@ -82,8 +85,8 @@ export class MuTwoFileSystemProvider implements vscode.FileSystemProvider {
 		if (!drivePath) {
 			throw vscode.FileSystemError.Unavailable(`Board ${boardId} is not connected`);
 		}
-
-		return path.join(drivePath, filePath);
+// Migrated to VS Code URI API
+		return vscode.Uri.joinPath(vscode.Uri.file(drivePath), filePath).fsPath;
 	}
 
 	/**
@@ -141,7 +144,10 @@ export class MuTwoFileSystemProvider implements vscode.FileSystemProvider {
 		// Find matching board by checking if local path starts with board's drive path
 		for (const [boardId, drivePath] of this.boardConnections) {
 			if (localPath.startsWith(drivePath)) {
-				const relativePath = path.relative(drivePath, localPath).replace(/\\/g, '/');
+				const driveUri = vscode.Uri.file(drivePath);
+				const localUri = vscode.Uri.file(localPath);
+				// Use VS Code's path utilities for cross-platform compatibility
+				const relativePath = vscode.workspace.asRelativePath(localUri, false).replace(/\\/g, '/');
 				return vscode.Uri.parse(`ctpy://${boardId}/${relativePath}`);
 			}
 		}

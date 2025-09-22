@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { getLogger } from '../../sys/unifiedLogger';
 
 export interface LibraryManifest {
     libraries: string[];
@@ -11,10 +12,10 @@ export interface LibraryManifest {
  * Manages lib.json generation and library tracking for projects
  */
 export class LibraryManager {
-    private outputChannel: vscode.OutputChannel;
+    private logger = getLogger();
 
     constructor() {
-        this.outputChannel = vscode.window.createOutputChannel('Mu Two Libraries');
+        // Using unified logger instead of createOutputChannel
     }
 
     /**
@@ -54,9 +55,9 @@ export class LibraryManager {
                 new TextEncoder().encode(JSON.stringify(libManifest, null, 2))
             );
 
-            this.outputChannel.appendLine(`Updated lib.json with ${libraries.length} libraries`);
+            this.logger.info('WORKSPACE', `Updated lib.json with ${libraries.length} libraries`);
         } catch (error) {
-            this.outputChannel.appendLine(`Failed to generate library manifest: ${error}`);
+            this.logger.error('WORKSPACE', `Failed to generate library manifest: ${error}`);
             throw error;
         }
     }
@@ -128,14 +129,14 @@ export class LibraryManager {
                         await vscode.workspace.fs.copy(sourcePath, targetPath, { overwrite: true });
                     }
                 }
-                
-                this.outputChannel.appendLine(`Synced libraries from project to current workspace`);
+
+                this.logger.info('WORKSPACE', `Synced libraries from project to current workspace`);
             } catch {
                 // Source lib directory doesn't exist
-                this.outputChannel.appendLine(`No libraries found in source project`);
+                this.logger.info('WORKSPACE', `No libraries found in source project`);
             }
         } catch (error) {
-            this.outputChannel.appendLine(`Failed to sync libraries: ${error}`);
+            this.logger.error('WORKSPACE', `Failed to sync libraries: ${error}`);
             throw error;
         }
     }
@@ -165,6 +166,6 @@ export class LibraryManager {
     }
 
     dispose(): void {
-        this.outputChannel.dispose();
+        // Using unified logger - no manual disposal needed
     }
 }
