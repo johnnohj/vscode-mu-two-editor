@@ -24,6 +24,7 @@
 import * as vscode from 'vscode';
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
+import { createCrossPlatformPath, getCrossPlatformDirectory } from './utils/crossPlatformPath';
 import { EventEmitter } from 'events';
 import { AdafruitBundleManager } from '../runtime/AdafruitBundleManager';
 import { WasmDeploymentManager } from './wasmDeploymentManager';
@@ -108,7 +109,7 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
         super();
 
         this.config = {
-            runtimePath: config.runtimePath || path.join(__dirname, '../public/bin', 'wasm-runtime-worker.mjs'),
+            runtimePath: config.runtimePath || createCrossPlatformPath(__dirname, '../public/bin', 'wasm-runtime-worker.mjs'),
             memorySize: config.memorySize || 512, // 512KB default
             timeout: config.timeout || 30000, // 30s default
             enableHardwareSimulation: config.enableHardwareSimulation ?? true,
@@ -600,7 +601,7 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
             this.logger.info('WASM_RUNTIME', 'Syncing CircuitPython Bundle to WASM via circup...');
 
             // Get WASM runtime directory
-            const wasmDir = path.dirname(this.config.runtimePath);
+            const wasmDir = getCrossPlatformDirectory(this.config.runtimePath);
 
             // Sync libraries using the bundle manager
             const success = await this.bundleManager.syncToWasmRuntime(wasmDir);

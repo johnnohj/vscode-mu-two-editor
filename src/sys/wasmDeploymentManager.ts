@@ -6,7 +6,8 @@
  */
 
 import * as vscode from 'vscode';
-import * as path from 'path';
+// import * as path from 'path'; // Migrated to VS Code URI-based path handling with fallback
+import { createCrossPlatformPath } from './utils/crossPlatformPath';
 import { AdafruitBundleManager } from '../runtime/AdafruitBundleManager';
 
 export interface WasmDeploymentConfig {
@@ -55,8 +56,8 @@ export class WasmDeploymentManager {
         try {
             // Create globalStorage directories
             const globalStoragePath = this.context.globalStorageUri.fsPath;
-            const wasmRuntimeDir = path.join(globalStoragePath, 'wasm-runtime');
-            const libraryDir = path.join(globalStoragePath, 'circuitpython-libs');
+            const wasmRuntimeDir = createCrossPlatformPath(globalStoragePath, 'wasm-runtime');
+            const libraryDir = createCrossPlatformPath(globalStoragePath, 'circuitpython-libs');
 
             // Ensure directories exist
             await vscode.workspace.fs.createDirectory(vscode.Uri.file(wasmRuntimeDir));
@@ -78,7 +79,7 @@ export class WasmDeploymentManager {
 
             // Create deployment manifest
             const deployment: DeployedWasmRuntime = {
-                runtimePath: path.join(wasmRuntimeDir, 'wasm-runtime-worker.mjs'),
+                runtimePath: createCrossPlatformPath(wasmRuntimeDir, 'wasm-runtime-worker.mjs'),
                 libraryPath: libraryDir,
                 version: this.DEPLOYMENT_VERSION,
                 deployedAt: Date.now()
@@ -130,7 +131,7 @@ export class WasmDeploymentManager {
     async cleanupOldDeployments(): Promise<void> {
         try {
             const globalStoragePath = this.context.globalStorageUri.fsPath;
-            const wasmRuntimeDir = path.join(globalStoragePath, 'wasm-runtime');
+            const wasmRuntimeDir = createCrossPlatformPath(globalStoragePath, 'wasm-runtime');
 
             // Check if directory exists
             try {
@@ -179,7 +180,7 @@ export class WasmDeploymentManager {
 
         // Get extension path - the files should be in the packaged extension
         const extensionPath = this.context.extensionPath;
-        const sourceBinDir = path.join(extensionPath, 'dist', 'bin');
+        const sourceBinDir = createCrossPlatformPath(extensionPath, 'dist', 'bin');
 
         try {
             // Copy all .mjs files from dist/bin to globalStorage
@@ -187,8 +188,8 @@ export class WasmDeploymentManager {
 
             for (const [fileName, fileType] of sourceFiles) {
                 if (fileType === vscode.FileType.File && fileName.endsWith('.mjs')) {
-                    const sourcePath = path.join(sourceBinDir, fileName);
-                    const targetPath = path.join(targetDir, fileName);
+                    const sourcePath = createCrossPlatformPath(sourceBinDir, fileName);
+                    const targetPath = createCrossPlatformPath(targetDir, fileName);
 
                     const fileContent = await vscode.workspace.fs.readFile(vscode.Uri.file(sourcePath));
                     await vscode.workspace.fs.writeFile(vscode.Uri.file(targetPath), fileContent);
