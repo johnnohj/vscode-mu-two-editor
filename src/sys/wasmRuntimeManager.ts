@@ -29,6 +29,7 @@ import { EventEmitter } from 'events';
 import { AdafruitBundleManager } from '../runtime/AdafruitBundleManager';
 import { WasmDeploymentManager } from './wasmDeploymentManager';
 import { getLogger } from './unifiedLogger';
+import { WASMSyncBridge } from '../runtime/wasmSyncBridge';
 
 // Import existing interfaces from debugAdapter
 import {
@@ -98,6 +99,7 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
     private hardwareTimeline: HardwareStateTimeline | null = null;
     private bundleManager: AdafruitBundleManager;
     private deploymentManager: WasmDeploymentManager;
+    private syncBridge: WASMSyncBridge | null = null;
     private logger = getLogger();
 
     // Hardware state cache for sub-250ms sync performance
@@ -118,6 +120,11 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
 
         this.bundleManager = AdafruitBundleManager.getInstance(context);
         this.deploymentManager = WasmDeploymentManager.getInstance(context!, this.bundleManager);
+
+        // Initialize sync bridge for hardware operations
+        if (context) {
+            this.syncBridge = new WASMSyncBridge(context);
+        }
 
         if (this.config.debugMode) {
             this.logger.debug('WASM_RUNTIME', 'WASM Runtime Manager initialized in debug mode');
@@ -166,6 +173,12 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
 
             // Set up IPC communication
             this.setupCommunication();
+
+            // Start sync bridge for hardware operations
+            if (this.syncBridge) {
+                this.syncBridge.startBridge(this.wasmProcess);
+                this.logger.info('WASM_RUNTIME', 'Sync bridge started for hardware operations');
+            }
 
             // Wait for runtime to be ready
             await this.waitForReady();
@@ -384,9 +397,39 @@ export class WasmRuntimeManager extends EventEmitter implements vscode.Disposabl
     }
 
     /**
+     * Get the sync bridge for hardware operations
+     */
+    getSyncBridge(): WASMSyncBridge | null {
+        return this.syncBridge;
+    }
+
+    /**
+     * Check if sync bridge is active
+     */
+    isSyncBridgeActive(): boolean {
+        return this.syncBridge?.isActive() ?? false;
+    }
+
+    /**
+     * Call a service in the WASM runtime via sync bridge
+     */
+    async callWASMService(service: string, ...args: any[]): Promise<any> {
+        if (!this.syncBridge) {
+            throw new Error('Sync bridge not available');
+        }
+        return await this.syncBridge.callWASMService(service, ...args);
+    }
+
+    /**
      * Dispose of WASM runtime process and clean up resources
      */
     dispose(): void {
+        // Dispose sync bridge first
+        if (this.syncBridge) {
+            this.syncBridge.dispose();
+            this.syncBridge = null;
+        }
+
         if (this.wasmProcess && !this.wasmProcess.killed) {
             this.wasmProcess.kill('SIGTERM');
 

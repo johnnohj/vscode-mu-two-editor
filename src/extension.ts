@@ -33,6 +33,8 @@ import { HardwareAbstractionRegistry } from './sys/hardwareAbstractionRegistry';
 import { PureDeviceManager } from './sys/pureDeviceManager';
 import { RuntimeBinder } from './sys/runtimeBinder';
 import { ExecutionManager } from './sys/executionManager';
+import { MuTwoCLIProcessor } from './sys/muTwoCLIProcessor';
+import { MuTwoTaskProvider, registerTaskInputs } from './sys/muTwoTasks';
 import { registerService } from './sys/serviceRegistry';
 import { PythonEnvManager } from './sys/pythonEnvManager';
 // TODO: Perhaps we can perform a quick 'isVisible' check on the replView panel to see if 
@@ -74,6 +76,8 @@ export let hardwareRegistry: HardwareAbstractionRegistry;
 export let pureDeviceManager: PureDeviceManager;
 export let runtimeBinder: RuntimeBinder;
 export let executionManager: ExecutionManager;
+export let cliProcessor: MuTwoCLIProcessor;
+export let taskProvider: MuTwoTaskProvider;
 export let webviewViewProvider: ReplViewProvider;
 export let editorPanelProvider: EditorPanelProvider;
 export let webviewPanelProvider: EditorReplPanelProvider;
@@ -345,6 +349,50 @@ async function initializeEssentialServices(context: vscode.ExtensionContext): Pr
     } catch (error) {
         logger.error('EXTENSION', 'Failed to initialize execution manager:', error);
         // Not critical - continue without runtime-agnostic execution
+    }
+
+    // Initialize Phase 4A - CLI Processor
+    try {
+        logger.info('EXTENSION', 'Initializing CLI processor...');
+        cliProcessor = new MuTwoCLIProcessor(context, serviceRegistry, runtimeCoordinator);
+
+        stateManager.setComponent('cliProcessor', cliProcessor);
+        registerService('cliProcessor', cliProcessor);
+
+        logger.info('EXTENSION', 'CLI processor initialized successfully');
+    } catch (error) {
+        logger.error('EXTENSION', 'Failed to initialize CLI processor:', error);
+        // Not critical - continue without CLI functionality
+    }
+
+    // Initialize Phase 4D - Task Provider
+    try {
+        logger.info('EXTENSION', 'Initializing task provider...');
+        taskProvider = new MuTwoTaskProvider(context);
+
+        // Register the task provider with VS Code
+        const taskProviderDisposable = vscode.tasks.registerTaskProvider(
+            MuTwoTaskProvider.type,
+            taskProvider
+        );
+        context.subscriptions.push(taskProviderDisposable);
+
+        // Register task inputs for dynamic task creation
+        registerTaskInputs(context);
+
+        stateManager.setComponent('taskProvider', taskProvider);
+        registerService('taskProvider', taskProvider);
+
+        // Integrate task provider with CLI processor
+        if (cliProcessor) {
+            cliProcessor.setTaskProvider(taskProvider);
+            logger.info('EXTENSION', 'Task provider integrated with CLI processor');
+        }
+
+        logger.info('EXTENSION', 'Task provider initialized successfully');
+    } catch (error) {
+        logger.error('EXTENSION', 'Failed to initialize task provider:', error);
+        // Not critical - continue without task functionality
     }
 
     // Initialize device manager with error handling
@@ -738,6 +786,13 @@ function registerCommands(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.setupPythonEnvironment', async () => {
             await setupPythonEnvironmentCommand(context);
+        })
+    );
+
+    // CLI testing command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.testCLI', async () => {
+            await testCLICommand();
         })
     );
 
@@ -2173,6 +2228,59 @@ async function setupPythonEnvironmentCommand(context: vscode.ExtensionContext): 
 	However, I think we should wait until the extension is more stable before making these
 	changes, as they may introduce additional complexity at this stage.
  */
+
+// CLI Testing Command
+async function testCLICommand(): Promise<void> {
+    if (!cliProcessor) {
+        vscode.window.showErrorMessage('CLI processor not initialized');
+        return;
+    }
+
+    const testCommands = [
+        'mu help',
+        'mu version',
+        'mu env status',
+        'mu runtime status',
+        'mu devices',
+        'mu config list'
+    ];
+
+    const selectedCommand = await vscode.window.showQuickPick(testCommands, {
+        placeHolder: 'Select a CLI command to test'
+    });
+
+    if (!selectedCommand) {
+        return;
+    }
+
+    try {
+        logger.info('EXTENSION', `Testing CLI command: ${selectedCommand}`);
+        const result = await cliProcessor.processCommand(selectedCommand);
+
+        let message = `Command: ${selectedCommand}\n`;
+        message += `Type: ${result.type}\n`;
+
+        if (result.message) {
+            message += `Result:\n${result.message}`;
+        }
+
+        if (result.type === 'success') {
+            vscode.window.showInformationMessage(`CLI Test Passed!\n\n${message}`, { modal: true });
+        } else if (result.type === 'error') {
+            vscode.window.showErrorMessage(`CLI Test Failed!\n\n${message}`, { modal: true });
+        } else {
+            vscode.window.showInformationMessage(`CLI Test - ${result.type}\n\n${message}`, { modal: true });
+        }
+
+        logger.info('EXTENSION', `CLI test result:`, result);
+
+    } catch (error) {
+        const errorMessage = `CLI test failed: ${error instanceof Error ? error.message : String(error)}`;
+        vscode.window.showErrorMessage(errorMessage);
+        logger.error('EXTENSION', 'CLI test error:', error);
+    }
+}
+
 // === BENEFITS OF THIS APPROACH ===
 
 /*

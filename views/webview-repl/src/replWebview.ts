@@ -40,7 +40,9 @@ const vscStyle = _el.style;
 
 interface ExtensionMessage {
   type: 'display' | 'commandHistory' | 'sessionRestore' | 'clear' | 'serialData' | 'serialConnect' | 'serialDisconnect' |
-        'runtime.statusUpdate' | 'wasm.initializationStart' | 'wasm.initializationComplete' | 'hardware.stateUpdate' | 'runtime.error';
+        'runtime.statusUpdate' | 'wasm.initializationStart' | 'wasm.initializationComplete' | 'hardware.stateUpdate' | 'runtime.error' |
+        // Phase 4C: CLI Response Messages
+        'cli-response' | 'interrupt-ack' | 'restart-ack' | 'task-started' | 'task-ended' | 'task-progress' | 'task-completed';
   data: {
     content?: string;
     commands?: string[];
@@ -53,11 +55,20 @@ interface ExtensionMessage {
   hardwareState?: any;
   success?: boolean;
   error?: string;
+  // Phase 4C: CLI and Task properties
+  uuid?: string;
+  taskId?: string;
+  message?: string;
+  timestamp?: number;
+  processId?: number;
+  exitCode?: number;
 }
 
 interface TerminalMessage {
   type: 'command' | 'requestHistory' | 'requestRestore' | 'syncContent' |
-        'runtime.switch' | 'runtime.connect' | 'runtime.disconnect';
+        'runtime.switch' | 'runtime.connect' | 'runtime.disconnect' |
+        // Phase 4C: CLI Command Messages
+        'cli-command' | 'keyboard-interrupt' | 'soft-restart' | 'task-status' | 'task-cancel';
   data: {
     command?: string;
     historyDirection?: 'up' | 'down';
@@ -66,6 +77,10 @@ interface TerminalMessage {
   // Runtime-specific properties
   runtime?: 'blinka-python' | 'wasm-circuitpython' | 'pyscript';
   timestamp?: number;
+  // Phase 4C: CLI properties
+  uuid?: string;
+  args?: string[];
+  taskId?: string;
 }
 
 class CommandTerminal {
@@ -89,6 +104,13 @@ class CommandTerminal {
 		runtimeStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
 		wasmInitializing: boolean;
 		hardwareState: any;
+		// Phase 4C: Micro-repl patterns
+		replState: 'idle' | 'executing' | 'waiting_prompt' | 'error';
+		commandQueue: Map<string, {resolve: Function, reject: Function, timeout?: number}>;
+		sessionActive: boolean;
+		// Blinka glyph support
+		blinkaGlyphAvailable: boolean;
+		fontLoaded: boolean;
 	};
 
 	constructor() {
@@ -111,7 +133,14 @@ class CommandTerminal {
 			currentRuntime: null,
 			runtimeStatus: 'disconnected',
 			wasmInitializing: false,
-			hardwareState: null
+			hardwareState: null,
+			// Phase 4C: Micro-repl patterns initialization
+			replState: 'idle',
+			commandQueue: new Map(),
+			sessionActive: false,
+			// Blinka glyph support initialization
+			blinkaGlyphAvailable: false,
+			fontLoaded: false
 		};
 		
 		this.init();
@@ -123,21 +152,163 @@ class CommandTerminal {
 			console.error('VSCode API not available');
 			return;
 		}
-		
+
+		// Phase 4C: Initialize Blinka font detection
+		await this.initializeBlinkaFont();
+
 		// Initialize CircuitPython language client for tab completion
 		this.languageClient = new CircuitPythonLanguageClient(this.vscode);
-		
+
 		this.setupTerminal();
 		this.setupEventListeners();
-		
+		this.setupMicroReplPatterns();
+
 		// Request session restoration
 		this.sendMessage({
 			type: 'requestRestore',
 			data: {}
 		});
-		
+
 		// Initial sync after setup
 		setTimeout(() => this.syncTerminalContent(), 100);
+	}
+
+	/**
+	 * Phase 4C: Initialize proper Blinka font detection with xterm.js support
+	 */
+	private async initializeBlinkaFont(): Promise<void> {
+		try {
+			// Check if Blinka font is declared in CSS
+			const fontFaceRules = Array.from(document.styleSheets)
+				.flatMap(sheet => {
+					try {
+						return Array.from(sheet.cssRules || []);
+					} catch (e) {
+						return [];
+					}
+				})
+				.filter(rule => rule instanceof CSSFontFaceRule);
+
+			const hasBlinkaFontFace = fontFaceRules.some(rule =>
+				rule.style.fontFamily?.includes('FreeMono-Terminal-Blinka')
+			);
+
+			if (hasBlinkaFontFace) {
+				// Wait for font to load
+				await this.waitForFontLoad('FreeMono-Terminal-Blinka');
+				this.state.fontLoaded = true;
+
+				// Test if Blinka glyph renders properly
+				this.state.blinkaGlyphAvailable = await this.testBlinkaGlyph();
+			}
+
+			console.log('Blinka font status:', {
+				fontLoaded: this.state.fontLoaded,
+				glyphAvailable: this.state.blinkaGlyphAvailable
+			});
+
+		} catch (error) {
+			console.warn('Blinka font initialization failed:', error);
+			this.state.fontLoaded = false;
+			this.state.blinkaGlyphAvailable = false;
+		}
+	}
+
+	/**
+	 * Wait for font to load using FontFace API
+	 */
+	private async waitForFontLoad(fontFamily: string): Promise<boolean> {
+		if (!document.fonts) {
+			return false;
+		}
+
+		try {
+			// Wait for font to be ready
+			await document.fonts.ready;
+
+			// Check if font is loaded
+			const fontFace = Array.from(document.fonts).find(font =>
+				font.family === fontFamily || font.family.includes(fontFamily)
+			);
+
+			if (fontFace) {
+				return fontFace.status === 'loaded';
+			}
+
+			// Fallback: try to load font explicitly
+			await document.fonts.load(`12px "${fontFamily}"`);
+			return true;
+
+		} catch (error) {
+			console.warn('Font loading failed:', error);
+			return false;
+		}
+	}
+
+	/**
+	 * Test if Blinka glyph (ϴ) renders properly in the font
+	 */
+	private async testBlinkaGlyph(): Promise<boolean> {
+		try {
+			const canvas = document.createElement('canvas');
+			const ctx = canvas.getContext('2d');
+			if (!ctx) return false;
+
+			canvas.width = 50;
+			canvas.height = 30;
+
+			// Test with Blinka font
+			ctx.font = '16px FreeMono-Terminal-Blinka, monospace';
+			ctx.fillStyle = '#ffffff';
+			ctx.fillText('ϴ', 10, 20); // Blinka glyph (U+03F4)
+
+			// Get image data
+			const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+			const data = imageData.data;
+
+			// Check if any pixels are non-transparent (font rendered something)
+			for (let i = 3; i < data.length; i += 4) {
+				if (data[i] > 0) { // Alpha channel > 0
+					return true;
+				}
+			}
+
+			return false;
+
+		} catch (error) {
+			console.warn('Blinka glyph test failed:', error);
+			return false;
+		}
+	}
+
+	/**
+	 * Phase 4C: Setup micro-repl patterns for terminal interaction
+	 */
+	private setupMicroReplPatterns(): void {
+		if (!this.terminal) return;
+
+		// Enhanced data handler with micro-repl control character support
+		this.terminal.onData((data) => {
+			// Handle control characters like micro-repl
+			if (data === '\x03') { // Ctrl+C
+				this.handleKeyboardInterrupt();
+				return;
+			}
+			if (data === '\x04') { // Ctrl+D
+				this.handleSoftRestart();
+				return;
+			}
+			if (data === '\x05') { // Ctrl+E (enter paste mode)
+				this.enterPasteMode();
+				return;
+			}
+
+			// Handle regular input with enhanced state management
+			this.handleRegularInput(data);
+		});
+
+		// Set up command queue cleanup
+		setInterval(() => this.cleanupExpiredCommands(), 30000); // Clean up every 30 seconds
 	}
 
 	setupTerminal() {
@@ -201,10 +372,7 @@ class CommandTerminal {
 		this.fitAddon.fit();
 		console.log('Terminal opened and fitted');
 
-		// Handle terminal input - capture complete lines instead of individual keystrokes
-		this.terminal.onData((data) => {
-			this.handleTerminalInput(data);
-		});
+		// Terminal input is handled by setupMicroReplPatterns()
 
 		// Handle key events for special keys
 		this.terminal.onKey(({ key, domEvent }) => {
@@ -326,26 +494,301 @@ class CommandTerminal {
 				this.writeOutput(`\r\n❌ Runtime Error: ${message.error}\r\n`);
 				this.showPrompt();
 				break;
+
+			// Phase 4C: CLI Response Messages
+			case 'cli-response':
+				if (message.uuid) {
+					this.handleCLIResponse(message);
+				}
+				break;
+
+			case 'interrupt-ack':
+				this.terminal?.write('\r\nKeyboard interrupt\r\n');
+				break;
+
+			case 'restart-ack':
+				this.terminal?.write('\r\nSoft restart\r\n');
+				this.showPrompt();
+				break;
+
+			case 'task-started':
+				if (message.taskId) {
+					this.terminal?.write(`🚀 Task started: ${message.taskId}\r\n`);
+				}
+				break;
+
+			case 'task-ended':
+				if (message.taskId) {
+					this.terminal?.write(`✅ Task completed: ${message.taskId}\r\n`);
+				}
+				break;
+
+			case 'task-progress':
+				this.handleTaskProgress(message);
+				break;
+
+			case 'task-completed':
+				if (message.taskId) {
+					this.terminal?.write(`🎉 Task finished: ${message.taskId}\r\n`);
+				}
+				break;
 		}
 	}
 
-	handleTerminalInput(data: string) {
-		if (!this.terminal) {return};
+	// Legacy method removed - using micro-repl patterns only
 
-		const char = data.charCodeAt(0);
-		
-		// Handle special characters
-		if (char === 13) { // Enter key
-			this.handleEnterKey();
-		} else if (char === 127 || char === 8) { // Backspace/Delete
-			this.handleBackspace();
-		} else if (char === 27) { // Escape sequences (arrow keys, etc.)
-			// For now, ignore escape sequences - they're handled in handleKeyEvent
-			return;
-		} else {
-			// Regular character input
+	/**
+	 * Phase 4C: Enhanced input handling with micro-repl patterns
+	 */
+	private handleRegularInput(data: string): void {
+		if (!this.terminal) return;
+
+		if (data === '\r') {
+			// Enter pressed - process command with micro-repl patterns
+			this.terminal.writeln('');
+			const command = this.state.currentInput.trim();
+
+			if (command.startsWith('mu ')) {
+				// CLI command - use promise-based execution
+				this.executeCLICommand(command);
+			} else {
+				// Regular REPL command - use existing execution
+				this.executeReplCommand(command);
+			}
+			this.state.currentInput = '';
+		} else if (data === '\x7f' || data === '\b') {
+			// Backspace with proper terminal handling
+			if (this.state.currentInput.length > 0) {
+				this.state.currentInput = this.state.currentInput.slice(0, -1);
+				this.terminal.write('\b \b');
+			}
+		} else if (data.charCodeAt(0) >= 32) {
+			// Regular character with state awareness
 			this.state.currentInput += data;
 			this.terminal.write(data);
+		}
+	}
+
+	/**
+	 * Phase 4C: Promise-based CLI command execution with UUID tracking
+	 */
+	private async executeCLICommand(command: string): Promise<void> {
+		this.addToHistory(command);
+
+		// Generate UUID for command tracking (micro-repl pattern)
+		const commandId = this.generateUUID();
+		const executionPromise = new Promise<any>((resolve, reject) => {
+			this.state.commandQueue.set(commandId, {
+				resolve,
+				reject,
+				timeout: Date.now() + 10000 // 10 second timeout
+			});
+		});
+
+		// Parse CLI command
+		const parts = command.split(/\s+/);
+		const cliCommand = parts[1]; // Skip 'mu'
+		const args = parts.slice(2);
+
+		// Send to extension with unique ID (micro-repl pattern)
+		this.sendMessage({
+			type: 'cli-command',
+			uuid: commandId,
+			data: {
+				command: cliCommand
+			},
+			args: args,
+			timestamp: Date.now()
+		});
+
+		try {
+			this.state.replState = 'executing';
+			this.showProcessingIndicator();
+
+			// Wait for response with timeout (micro-repl pattern)
+			const result = await Promise.race([
+				executionPromise,
+				this.createTimeoutPromise(10000) // 10 second timeout
+			]);
+
+			this.displayResult(result);
+		} catch (error) {
+			this.displayError(error);
+		} finally {
+			this.state.replState = 'idle';
+			this.state.commandQueue.delete(commandId);
+			this.showPrompt();
+		}
+	}
+
+	/**
+	 * Enhanced REPL command execution
+	 */
+	private executeReplCommand(command: string): void {
+		this.addToHistory(command);
+
+		// Send regular REPL command
+		this.sendMessage({
+			type: 'command',
+			runtime: this.state.currentRuntime || undefined,
+			data: {
+				command: command
+			}
+		});
+	}
+
+	/**
+	 * Phase 4C: Control character handlers
+	 */
+	private handleKeyboardInterrupt(): void {
+		this.terminal?.write('^C\r\n');
+
+		// Clear any pending commands
+		this.clearCommandQueue();
+
+		// Send interrupt signal
+		const interruptId = this.generateUUID();
+		this.sendMessage({
+			type: 'keyboard-interrupt',
+			uuid: interruptId,
+			timestamp: Date.now()
+		});
+
+		this.state.replState = 'idle';
+		this.showPrompt();
+	}
+
+	private handleSoftRestart(): void {
+		this.terminal?.write('^D\r\n');
+
+		// Clear state
+		this.clearCommandQueue();
+
+		// Send soft restart signal
+		const restartId = this.generateUUID();
+		this.sendMessage({
+			type: 'soft-restart',
+			uuid: restartId,
+			timestamp: Date.now()
+		});
+
+		this.state.replState = 'idle';
+	}
+
+	private enterPasteMode(): void {
+		this.terminal?.write('^E\r\n');
+		this.terminal?.write('paste mode; Ctrl-C to cancel, Ctrl-D to finish\r\n');
+
+		// Could implement multi-line paste mode here
+		// For now, just show the message
+		this.showPrompt();
+	}
+
+	/**
+	 * Utility methods for micro-repl patterns
+	 */
+	private generateUUID(): string {
+		return 'xxxx-xxxx-4xxx-yxxx-xxxx'.replace(/[xy]/g, function(c) {
+			const r = Math.random() * 16 | 0;
+			const v = c === 'x' ? r : (r & 0x3 | 0x8);
+			return v.toString(16);
+		});
+	}
+
+	private createTimeoutPromise(ms: number): Promise<never> {
+		return new Promise((_, reject) => {
+			setTimeout(() => reject(new Error('Command timeout')), ms);
+		});
+	}
+
+	private addToHistory(command: string): void {
+		if (command.trim() && command !== this.state.commandHistory[this.state.commandHistory.length - 1]) {
+			this.state.commandHistory.push(command);
+			// Limit history size
+			if (this.state.commandHistory.length > 100) {
+				this.state.commandHistory.shift();
+			}
+		}
+		this.state.historyIndex = -1;
+	}
+
+	private clearCommandQueue(): void {
+		// Reject all pending commands
+		for (const [id, {reject}] of this.state.commandQueue) {
+			reject(new Error('Interrupted'));
+		}
+		this.state.commandQueue.clear();
+	}
+
+	private cleanupExpiredCommands(): void {
+		const now = Date.now();
+		for (const [id, {timeout, reject}] of this.state.commandQueue) {
+			if (timeout && now > timeout) {
+				reject(new Error('Command timeout'));
+				this.state.commandQueue.delete(id);
+			}
+		}
+	}
+
+	private showProcessingIndicator(): void {
+		if (!this.terminal) return;
+		this.terminal.write('⏳ Processing...\r\n');
+	}
+
+	private displayResult(result: any): void {
+		if (!this.terminal) return;
+
+		if (result.success) {
+			// Enhanced success display with micro-repl formatting
+			this.terminal.write(`\x1b[32m✓\x1b[0m ${result.message || result.data || 'Success'}\r\n`);
+		} else {
+			this.displayError(result.error || result.message || 'Unknown error');
+		}
+	}
+
+	private displayError(error: any): void {
+		if (!this.terminal) return;
+
+		// Enhanced error display with micro-repl formatting
+		this.terminal.write(`\x1b[31m✗\x1b[0m ${error.message || error}\r\n`);
+	}
+
+	/**
+	 * Phase 4C: Handle CLI response messages
+	 */
+	private handleCLIResponse(message: ExtensionMessage): void {
+		const { uuid, success, data, message: responseMessage, error } = message;
+
+		if (!uuid || !this.state.commandQueue.has(uuid)) {
+			return; // Unknown or expired command
+		}
+
+		const { resolve } = this.state.commandQueue.get(uuid)!;
+
+		// Resolve the promise with the response
+		resolve({
+			success,
+			data,
+			message: responseMessage,
+			error
+		});
+	}
+
+	/**
+	 * Handle task progress messages
+	 */
+	private handleTaskProgress(message: ExtensionMessage): void {
+		const { taskId, processId, exitCode } = message;
+
+		if (taskId) {
+			let progressMsg = `📊 Task ${taskId}`;
+			if (processId) {
+				progressMsg += ` (PID: ${processId})`;
+			}
+			if (exitCode !== undefined) {
+				progressMsg += ` exited with code ${exitCode}`;
+			}
+			this.terminal?.write(`${progressMsg}\r\n`);
 		}
 	}
 
@@ -494,23 +937,41 @@ class CommandTerminal {
 		this.addPaddingBelowPrompt();
 	}
 
+	/**
+	 * Phase 4C: Enhanced state-aware prompt with proper Blinka glyph support
+	 */
 	private getPromptForCurrentRuntime(): string {
-		// Add Blinka glyph to CircuitPython prompts with fallback
-		const blinkaGlyph = this.detectBlinkaFont() ? '\uE000' : '🐍';
+		// Use proper Blinka glyph detection results
+		const blinkaGlyph = this.state.blinkaGlyphAvailable ? 'ϴ' : '🐍';
 
+		// Micro-repl style dynamic prompts based on state
+		switch (this.state.replState) {
+			case 'executing':
+				return '... ';
+			case 'waiting_prompt':
+				return '>>> ';
+			case 'error':
+				return '!!! ';
+			default:
+				break;
+		}
+
+		// Runtime-specific prompts
 		switch (this.state.currentRuntime) {
 			case 'wasm-circuitpython':
 				return this.state.runtimeStatus === 'connected'
-					? `>>> `
-					: `wasm> `;
+					? `${blinkaGlyph}>> `
+					: `wasm${blinkaGlyph}> `;
 			case 'pyscript':
-				return this.state.runtimeStatus === 'connected' ? '>>> ' : 'pyscript> ';
+				return this.state.runtimeStatus === 'connected'
+					? `${blinkaGlyph}>> `
+					: `pyscript${blinkaGlyph}> `;
 			case 'blinka-python':
 				return this.state.connected
-					? `>>> `
-					: `blinka> `;
+					? `${blinkaGlyph}>> `
+					: `blinka${blinkaGlyph}> `;
 			default:
-				return 'mu2> ';
+				return `mu${blinkaGlyph}> `;
 		}
 	}
 
@@ -522,11 +983,8 @@ class CommandTerminal {
 	private writeCircuitPythonHelp(): void {
 		if (!this.terminal) return;
 
-		// Try to detect if Blinka font loaded successfully
-		const hasBlinkaFont = this.detectBlinkaFont();
-
-
-		const logo = hasBlinkaFont ? '\uE000' : '🐍⚡';
+		// Use proper Blinka glyph detection
+		const logo = this.state.blinkaGlyphAvailable ? 'ϴ' : '🐍⚡';
 
 		const welcomeMessage = `
     ${logo} CircuitPython ${this.getCircuitPythonVersion()} on WASM Virtual Hardware ${logo}
@@ -556,28 +1014,7 @@ Ready for CircuitPython magic! ✨
 		this.writeOutput(welcomeMessage);
 	}
 
-	private detectBlinkaFont(): boolean {
-		// Simple font detection - try to create a canvas and measure text width
-		try {
-			const canvas = document.createElement('canvas');
-			const ctx = canvas.getContext('2d');
-			if (!ctx) return false;
-
-			// Test with Blinka font
-			ctx.font = '12px FreeMono-Terminal-Blinka, monospace';
-			const blinkaWidth = ctx.measureText('\uE000').width;
-
-			// Test with fallback font
-			ctx.font = '12px monospace';
-			const fallbackWidth = ctx.measureText('\uE000').width;
-
-			// If widths differ significantly, Blinka font is probably loaded
-			return Math.abs(blinkaWidth - fallbackWidth) > 1;
-		} catch (error) {
-			console.warn('Font detection failed:', error);
-			return false;
-		}
-	}
+	// Legacy detectBlinkaFont method removed - using proper Phase 4C font detection
 
 	private getCircuitPythonVersion(): string {
 		// Could be dynamically fetched from WASM runtime
