@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { MuTwoWorkspace } from './workspace';
 import { IDevice } from '../devices/core/deviceDetector';
-import { getLogger } from '../sys/unifiedLogger';
+import { getLogger } from '../utils/unifiedLogger';
 
 export interface WorkspaceValidationResult {
     isValidMu2Workspace: boolean;

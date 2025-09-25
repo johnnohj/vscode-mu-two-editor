@@ -118,14 +118,14 @@ export class FileOperations {
     }
 
     /**
-     * Create basic CircuitPython project structure
+     * Create basic Mu 2 Editor project structure
      */
     static async createBasicProjectStructure(projectDir: vscode.Uri): Promise<void> {
         // Create lib directory
         await FileOperations.ensureDirectoryExists(vscode.Uri.joinPath(projectDir, 'lib'));
         
         // Create a basic code.py file
-        const codeContent = `# Mu Two CircuitPython Project
+        const codeContent = `# Mu 2 Editor Project
 # Write your code here!
 
 print("Hello from Mu Two!")

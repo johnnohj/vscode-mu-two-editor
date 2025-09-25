@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as learnGuidesDatabase from '../../data/learn_guides.json';
 import { MuDevice } from '../../devices/core/deviceDetector';
-import { getLogger } from '../../sys/unifiedLogger';
+import { getLogger } from '../../utils/unifiedLogger';
 
 /**
  * TODO: Adafruit Learn Guides have their own GitHub repo, and as such, perhaps we should instead

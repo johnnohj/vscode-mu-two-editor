@@ -1,13 +1,15 @@
 import * as vscode from 'vscode';
 import { SerialPort } from 'serialport';
-import { getLogger } from '../../sys/unifiedLogger';
-const deviceDatabase = import('../../data/circuitpython_devices.json');
-const detectionHelpers = import('../../data/detection_helpers.json');
+import { getLogger } from '../../utils/unifiedLogger';
+import * as deviceDatabase from '../../data/circuitpython_devices.json';
+import * as detectionHelpers from '../../data/detection_helpers.json';
 
 /**
  * Generic device interface - abstraction for detected hardware devices
  */
 export interface IDevice {
+	/** Stable unique identifier (VID:PID:Serial or hash-based) */
+	id: string;
 	/** Serial port path */
 	path: string;
 	/** USB Vendor ID */
@@ -476,6 +478,32 @@ export class MuDeviceDetector implements vscode.Disposable {
 	/**
 	 * Analyze a single serial port for CircuitPython device characteristics
 	 */
+	private generateStableDeviceId(port: any): string {
+		const vendorId = port.vendorId ? `0x${port.vendorId.toUpperCase()}` : 'unknown';
+		const productId = port.productId ? `0x${port.productId.toUpperCase()}` : 'unknown';
+		const serialNumber = port.serialNumber || 'no-serial';
+
+		// Create a stable ID based on hardware identifiers
+		// Format: vendorId:productId:serialNumber (or path-based fallback)
+		if (port.serialNumber) {
+			return `${vendorId}:${productId}:${serialNumber}`;
+		} else {
+			// Fallback: use path but make it more stable by extracting port info
+			const pathHash = this.hashString(port.path);
+			return `${vendorId}:${productId}:path-${pathHash}`;
+		}
+	}
+
+	private hashString(str: string): string {
+		let hash = 0;
+		for (let i = 0; i < str.length; i++) {
+			const char = str.charCodeAt(i);
+			hash = ((hash << 5) - hash) + char;
+			hash = hash & hash; // Convert to 32-bit integer
+		}
+		return Math.abs(hash).toString(16);
+	}
+
 	private async analyzeSerialPort(port: any): Promise<MuDevice | null> {
 		const vendorId = port.vendorId ? `0x${port.vendorId.toUpperCase()}` : undefined;
 		const productId = port.productId ? `0x${port.productId.toUpperCase()}` : undefined;
@@ -494,6 +522,7 @@ export class MuDeviceDetector implements vscode.Disposable {
 				const portType = primaryBoard?.port;
 
 				return {
+					id: this.generateStableDeviceId(port),
 					path: port.path,
 					vendorId,
 					productId,
@@ -513,6 +542,7 @@ export class MuDeviceDetector implements vscode.Disposable {
 			const vendorInfo = this._deviceDatabase.vendor_lookup[vendorId];
 			if (vendorInfo) {
 				return {
+					id: this.generateStableDeviceId(port),
 					path: port.path,
 					vendorId,
 					productId,
@@ -529,6 +559,7 @@ export class MuDeviceDetector implements vscode.Disposable {
 		const patternMatch = this.matchByStringPatterns(port);
 		if (patternMatch) {
 			return {
+				id: this.generateStableDeviceId(port),
 				path: port.path,
 				vendorId,
 				productId,
@@ -724,6 +755,7 @@ export class MuDeviceDetector implements vscode.Disposable {
 	private async detectMockDevices(): Promise<MuDevice[]> {
 		// Return a mock CircuitPython device for development
 		return [{
+			id: '0x239A:0x8022:mock-device',
 			path: 'COM3',
 			displayName: 'Mock CircuitPython Device',
 			boardId: 'adafruit_feather_m4_express',

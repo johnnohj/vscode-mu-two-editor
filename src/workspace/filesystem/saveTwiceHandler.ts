@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import { ProjectManager } from '../projectManager';
-import { BoardManager } from '../../sys/boardManager';
+import { BoardManager } from '../../devices/management/boardManager';
 import { LibraryManager } from '../integration/libraryManager';
 import { FileOperations } from './fileOperations';
-import { getLogger } from '../../sys/unifiedLogger';
+import { getLogger } from '../../utils/unifiedLogger';
 
 // Save-Twice Handler with Project Integration
 export class FileSaveTwiceHandler implements vscode.Disposable {
@@ -35,8 +35,8 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
         try {
             const filePath = document.uri.path;
             
-            // Only handle files in ctpy-device/current directory
-            if (!filePath.includes('/ctpy-device/current/')) {
+            // Only handle files in mcu-device/current directory
+            if (!filePath.includes('/mcu-device/current/')) {
                 return;
             }
 
@@ -74,8 +74,8 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
                 return;
             }
 
-            const mainRoot = workspaceFolders[0];
-            const projectsDir = vscode.Uri.joinPath(mainRoot.uri, 'projects');
+            const localRoot = workspaceFolders[0];
+            const projectsDir = vscode.Uri.joinPath(localRoot.uri, 'projects');
             await FileOperations.ensureDirectoryExists(projectsDir);
 
             const currentProjectName = this.projectManager.getCurrentProjectName();
@@ -110,10 +110,10 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
                 return;
             }
 
-            const mainRoot = workspaceFolders[0];
-            const ctpyRoot = workspaceFolders[1];
-            const currentLibDir = vscode.Uri.joinPath(ctpyRoot.uri, 'current', 'lib');
-            const projectsDir = vscode.Uri.joinPath(mainRoot.uri, 'projects');
+            const localRoot = workspaceFolders[0];
+            const remoteRoot = workspaceFolders[1];
+            const currentLibDir = vscode.Uri.joinPath(remoteRoot.uri, 'current', 'lib');
+            const projectsDir = vscode.Uri.joinPath(localRoot.uri, 'projects');
 
             const currentProjectName = this.projectManager.getCurrentProjectName();
             let targetDir: vscode.Uri;
@@ -136,7 +136,7 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
 
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: `Syncing ${fileName} to CircuitPython`,
+            title: `Syncing ${fileName} to remote device`,
             cancellable: false
         }, async (progress) => {
             const increment = 100 / boards.length;

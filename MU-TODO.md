@@ -1,4 +1,4 @@
-**NOTE** 
+**NOTE**
 **This file exists:**
       **1.) to contain a record of standing questions and concerns,**
       **2.) to document plans for future development**
@@ -8,13 +8,14 @@
 
 ## FUTURE IMPROVEMENTS
 
-- (circup) When no workspace open, dedicated library view GUI in the Explorer tab area that:
+- (circup) When on 'Global' tab, dedicated library view GUI in the Explorer tab area that:
    - Shows currently-installed libraries
    - Shows installed version, bold red if update available
    - has blank input line
    - has 'Install' button - if version entered in input line, installs/adds that version to global lib, else installs latest
-   
-- (circup) When workspace open, dedicated library view GUI in the Explorer tab area that:
+
+- (circup) When on 'Workspace' tab, dedicated library view GUI in the Explorer tab area that:
+   - Shows current project 'code.py' local-disk equivalent path+name
    - Shows currently-installed project libraries
    - Shows installed version, bold red if update available
    - has blank input line
@@ -22,6 +23,7 @@
 
 - (webview REPLs) To tie everything together, the main REPL and the editor+REPL need to be able to coordinate. My vision is that the editor's code can 'import tof from mu_repl' or 'import sensor.tof from mu_repl' so that the editor code can read data sent - in this case as tof distance data - from the main REPL webview. For its part, the main REPL will need a secondary tab to provide a web-based UI for: triggering button presses, sending pins high/low, sending/live adjusting analog pin data or sensor data [sliders with customizable range input entry boxes], providing LED representations [blinking and color reproduction]. The main REPL should be able to import the correct library to use for functionality beyond basic board interaction. {The ultimate would be if we can also mimic the register data/use the CONST data item sometimes found in libraries for our debugging. If we can leverage the higher power of the host machine to shadow the registry values of the microcontroller, and use the WASM-Node build to generate the sensor CONST registers, I think this would be a powerful tool for prototyping/rapid proof-of-concept/debugging. This register feature is the lowest priority, however}
 - Main REPL needs always-available commands like: which --runtime, switch -r wasm, help
+- '.commands'?, e.g., '.which --runtime', '.switch -r wasm', '.help'?
 
 ## WEBVIEW QUESTION
 
@@ -106,7 +108,7 @@
 - **Line 174**: TODO: Add command to retry Python environment setup
 - **Line 1946**: TODO: Implement proper Python environment retry logic
 - **Line 1972**: TODO: Show detailed logs or output channel
-- **Line 1981**: TODO: File is nearly 1000 lines - consider refactoring into smaller modules under `/src/sys/`
+- **Line 1981**: TODO: File is nearly 1000 lines - consider refactoring into smaller modules under `/src/core/`
 
 ### **🗂️ Workspace Management (`src/workspace/`)**
 - **workspace.ts:110**: TODO: Check for workspace config file

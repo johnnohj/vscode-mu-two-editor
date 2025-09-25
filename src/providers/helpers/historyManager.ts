@@ -1,6 +1,6 @@
 // File: src/app/terminalHistoryManager.ts
 import * as vscode from 'vscode';
-import { getLogger } from '../../sys/unifiedLogger';
+import { getLogger } from '../../utils/unifiedLogger';
 // import { SerialMessage } from './serialProvider'; // File deleted - using any for now
 type SerialMessage = any;
 

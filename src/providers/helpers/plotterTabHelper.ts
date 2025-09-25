@@ -6,8 +6,8 @@
  */
 
 import * as vscode from 'vscode';
-import { getNonce } from '../../sys/utils/webview';
-import { getLogger } from '../../sys/unifiedLogger';
+import { getNonce } from '../../utils/webview';
+import { getLogger } from '../../utils/unifiedLogger';
 
 export interface PlotterDataPoint {
 	timestamp: number;

@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { IDevice } from "../devices/core/deviceDetector";
 import { MuTwoWorkspace, WorkspaceConfig, BoardAssociation, PendingDownload, WorkspaceRegistry, WorkspaceRegistryEntry, WorkspaceFiles } from "./workspace";
 import { LearnGuideProvider } from "./integration/learnGuideProvider";
-import { getLogger } from '../sys/unifiedLogger';
+import { getLogger } from '../utils/unifiedLogger';
 
 export interface WorkspaceCreationOptions {
     device?: IDevice;
@@ -111,7 +111,7 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
 
         // Generate workspace ID and name
         const workspaceId = await this._workspaceUtil.generateWorkspaceId();
-        
+
         // In development mode, prefer 'mu2-test' as the workspace name for virtual workspaces
         let workspaceName: string;
         if (this._workspaceUtil.isDevelopmentMode() && !options.device && !options.workspaceName) {
@@ -120,7 +120,7 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
         } else {
             workspaceName = options.workspaceName || options.device?.displayName || 'CircuitPython Project';
         }
-        
+
         const safeName = this.sanitizeWorkspaceName(workspaceName);
 
         // Create workspace directory
@@ -141,7 +141,7 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
             // In development mode, reuse current window to avoid opening new VS Code instances
             const reuseWindow = this.shouldReuseWindow();
             await vscode.commands.executeCommand('vscode.openFolder', workspaceUri, !reuseWindow);
-            
+
             if (reuseWindow) {
                 this._logger.info('WORKSPACE', 'Development mode: Reusing current window for workspace');
             }
@@ -246,7 +246,7 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
 
         return `# Welcome to Your ${workspaceName} Workspace
 
-Welcome to CircuitPython development with Mu 2! ${device ? 'Your board has been detected and this workspace is ready for development.' : 'This workspace is ready for CircuitPython development.'}
+Welcome to Mu 2! ${device ? 'Your board has been detected and this workspace is ready for development.' : 'This workspace is ready for project development.'}
 ${boardSection}
 ## Quick Start
 1. Type \`.connect\` in the main REPL to connect to your board
@@ -329,11 +329,11 @@ while True:
      */
     private sanitizeWorkspaceName(name: string): string {
         // In development mode, preserve the exact 'mu2-test' name
-        if (this._workspaceUtil.isDevelopmentMode() && 
+        if (this._workspaceUtil.isDevelopmentMode() &&
             (name.toLowerCase() === 'mu2-test' || name.toLowerCase().replace(/\s+/g, '-') === 'mu2-test')) {
             return 'mu2-test';
         }
-        
+
         return name
             .replace(/[^a-zA-Z0-9\s\-_]/g, '')
             .replace(/\s+/g, '-')
@@ -377,16 +377,14 @@ while True:
             }
         }
 
-        // Fallback to extension globalStorageUri
+        // Fallback to extension globalStorageUri (using activationManager-created directories)
         if (context?.globalStorageUri) {
             try {
-                // Ensure the global storage directory exists
-                await vscode.workspace.fs.createDirectory(context.globalStorageUri);
+                // Use workspaces directory created by activationManager - no creation needed
                 const globalWorkspacePath = vscode.Uri.joinPath(context.globalStorageUri, 'workspaces');
-                await vscode.workspace.fs.createDirectory(globalWorkspacePath);
                 return globalWorkspacePath.fsPath;
             } catch (error) {
-                console.warn('Failed to use globalStorageUri:', error);
+                console.warn('Failed to use globalStorageUri workspaces directory:', error);
             }
         }
 
@@ -421,7 +419,7 @@ while True:
             // In development mode, reuse current window to avoid opening new VS Code instances
             const reuseWindow = this.shouldReuseWindow();
             await vscode.commands.executeCommand('vscode.openFolder', workspaceUri, !reuseWindow);
-            
+
             if (reuseWindow) {
                 this._logger.info('WORKSPACE', 'Development mode: Reusing current window for existing workspace');
             }
@@ -442,7 +440,7 @@ while True:
             return;
         }
 
-        const isMu2 = await this._workspaceUtil.isMu2Workspace(currentWorkspace);
+        const isMu2 = await this._workspaceUtil.isMuTwoWorkspace(currentWorkspace);
         if (!isMu2) {
             return;
         }
@@ -454,7 +452,7 @@ while True:
 
         // Current workspace lacks board association
         const choice = await vscode.window.showInformationMessage(
-            `A Mu 2 workspace currently lacks an associated board. Would you like to associate this ${device.displayName}?`,
+            `Mu 2 workspace currently lacks an associated board. Would you like to associate this ${device.displayName}?`,
             'Associate Board',
             'Create New Workspace',
             'Ignore'
@@ -540,10 +538,9 @@ while True:
         }
 
         this._globalStorageUri = extension.exports.context.globalStorageUri;
-        
-        // Create mu2-workspaces directory in global storage
-        const workspacesDir = vscode.Uri.joinPath(this._globalStorageUri, 'mu2-workspaces');
-        await vscode.workspace.fs.createDirectory(workspacesDir);
+
+        // Use registry directory created by activationManager - no creation needed
+        const registryDir = vscode.Uri.joinPath(this._globalStorageUri, 'workspaces', 'registry');
 
         // Load or create registry
         await this.loadRegistry();
@@ -558,8 +555,8 @@ while True:
             return;
         }
 
-        const registryPath = vscode.Uri.joinPath(this._globalStorageUri, 'mu2-workspaces', 'registry.json');
-        
+        const registryPath = vscode.Uri.joinPath(this._globalStorageUri, 'workspaces', 'registry', 'registry.json');
+
         try {
             const registryData = await vscode.workspace.fs.readFile(registryPath);
             this._registry = JSON.parse(new TextDecoder().decode(registryData));
@@ -585,8 +582,8 @@ while True:
         }
 
         this._registry.lastUpdated = new Date().toISOString();
-        const registryPath = vscode.Uri.joinPath(this._globalStorageUri, 'mu2-workspaces', 'registry.json');
-        
+        const registryPath = vscode.Uri.joinPath(this._globalStorageUri, 'workspaces', 'registry', 'registry.json');
+
         await vscode.workspace.fs.writeFile(
             registryPath,
             new TextEncoder().encode(JSON.stringify(this._registry, null, 2))
@@ -602,18 +599,18 @@ while True:
         projectDirectory?: string;
     }): Promise<string> {
         await this.initializeWorkspaceManagement();
-        
+
         const workspaceId = this.generateWorkspaceId();
         const workspaceName = this.sanitizeWorkspaceName(options.name);
-        
+
         // Create workspace directory structure
-        const workspaceDir = vscode.Uri.joinPath(this._globalStorageUri!, 'mu2-workspaces', workspaceId);
+        const workspaceDir = vscode.Uri.joinPath(this._globalStorageUri!, 'workspaces', workspaceId);
         await vscode.workspace.fs.createDirectory(workspaceDir);
-        
+
         // Create .files/ directory
         const filesDir = vscode.Uri.joinPath(workspaceDir, '.files');
         await vscode.workspace.fs.createDirectory(filesDir);
-        
+
         // Create workspace files structure
         const workspaceFiles: WorkspaceFiles = {
             directory: filesDir.fsPath,
@@ -685,7 +682,7 @@ while True:
      */
     public async openWorkspaceWithFiles(workspaceId: string): Promise<boolean> {
         await this.loadRegistry();
-        
+
         const workspace = this._registry?.workspaces[workspaceId];
         if (!workspace) {
             vscode.window.showErrorMessage(`Workspace not found: ${workspaceId}`);
@@ -702,11 +699,11 @@ while True:
             // In development mode, reuse current window to avoid opening new VS Code instances
             const reuseWindow = this.shouldReuseWindow();
             await vscode.commands.executeCommand('vscode.openFolder', workspaceUri, !reuseWindow);
-            
+
             if (reuseWindow) {
                 this._logger.info('WORKSPACE', 'Development mode: Reusing current window for enhanced workspace');
             }
-            
+
             this._logger.info('WORKSPACE', `Opened enhanced workspace: ${workspace.name}`);
             return true;
         } catch (error) {
@@ -729,7 +726,7 @@ while True:
      */
     public async deleteWorkspaceWithFiles(workspaceId: string): Promise<boolean> {
         await this.loadRegistry();
-        
+
         const workspace = this._registry?.workspaces[workspaceId];
         if (!workspace) {
             return false;
@@ -737,7 +734,7 @@ while True:
 
         try {
             // Delete workspace directory
-            const workspaceDir = vscode.Uri.joinPath(this._globalStorageUri!, 'mu2-workspaces', workspaceId);
+            const workspaceDir = vscode.Uri.joinPath(this._globalStorageUri!, 'workspaces', workspaceId);
             await vscode.workspace.fs.delete(workspaceDir, { recursive: true });
 
             // Remove from registry
@@ -757,7 +754,7 @@ while True:
      */
     public async restoreToInitialConfig(workspaceId: string): Promise<boolean> {
         await this.loadRegistry();
-        
+
         const workspace = this._registry?.workspaces[workspaceId];
         if (!workspace) {
             return false;
@@ -810,9 +807,9 @@ while True:
     private createCodeWorkspaceContent(options: { name: string; device?: IDevice; projectDirectory?: string }) {
         return {
             folders: [
-                { 
+                {
                     name: options.name,
-                    path: options.projectDirectory || "." 
+                    path: options.projectDirectory || "."
                 }
             ],
             settings: {
@@ -853,13 +850,13 @@ while True:
     private async initializeDevelopmentMode(): Promise<void> {
         if (this._workspaceUtil.isDevelopmentMode()) {
             this._logger.info('WORKSPACE', 'Development mode detected for mu2-test workspace');
-            
+
             // Clean test workspace files from previous sessions
             await this._workspaceUtil.cleanTestWorkspaceFiles();
-            
+
             // Set up window close handler for log file cleanup
             this.setupWindowCloseHandler();
-            
+
             this._logger.info('WORKSPACE', `Test workspace session: ${this._workspaceUtil.getSessionId()}`);
         }
     }
@@ -928,7 +925,7 @@ while True:
             // Always treat mu2-test workspace as non-Mu2 at start of new session
             const sessionKey = `mu2.testWorkspace.session.${this._workspaceUtil.getSessionId()}`;
             const extension = vscode.extensions.getExtension('mu-two.mu-two-editor');
-            
+
             if (extension?.exports?.context) {
                 const sessionInitialized = extension.exports.context.globalState.get<boolean>(sessionKey);
                 if (!sessionInitialized) {
@@ -939,7 +936,7 @@ while True:
                 }
             }
         }
-        
+
         return false;
     }
 

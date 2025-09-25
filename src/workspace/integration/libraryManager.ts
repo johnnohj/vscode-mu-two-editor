@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getLogger } from '../../sys/unifiedLogger';
+import { getLogger } from '../../utils/unifiedLogger';
 
 export interface LibraryManifest {
     libraries: string[];

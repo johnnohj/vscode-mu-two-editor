@@ -36,7 +36,7 @@ export interface WorkspaceRegistryEntry {
     id: string;
     name: string;
     board_name?: string;
-    workspace_path: string; // Kept for backward compatibility
+    workspace_path: string; // Kept for backward compatibility - prefer URI when possible
     workspace_uri?: string; // New URI-based path storage
     created: string;
     last_accessed: string;
@@ -206,13 +206,14 @@ export class MuTwoWorkspace {
     /**
      * Check if current workspace is a MuTwo workspace
      */
-    public async isMu2Workspace(workspaceUri?: vscode.Uri): Promise<boolean> {
+    public async isMuTwoWorkspace(workspaceUri?: vscode.Uri): Promise<boolean> {
         const targetUri = workspaceUri || MuTwoWorkspace.rootPath;
         if (!targetUri) {
             return false;
         }
 
         try {
+			// 'mu2ConfigPath' used consciously because the directory is called 'mu2'
             const mu2ConfigPath = vscode.Uri.joinPath(targetUri, '.vscode', 'mu2', 'workspace-config.json');
             await vscode.workspace.fs.stat(mu2ConfigPath);
             return true;

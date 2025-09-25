@@ -7,10 +7,9 @@
 
 import * as vscode from 'vscode';
 import { MuDeviceDetector, IDevice, MuDevice, DetectionResult } from '../../devices/core/deviceDetector';
-import { WasmRuntimeManager } from '../../sys/wasmRuntimeManager';
-import { getLogger } from '../../sys/unifiedLogger';
-import { MuTwoRuntimeCoordinator } from '../../sys/unifiedRuntimeCoordinator';
-import { getService } from '../../sys/serviceRegistry';
+import { WasmRuntimeManager } from '../../runtime/wasm/wasmRuntimeManager';
+import { getLogger } from '../../utils/unifiedLogger';
+import { MuTwoRuntimeCoordinator } from '../../runtime/core/unifiedRuntimeCoordinator';
 
 export interface BoardAssociation {
 	device?: MuDevice;

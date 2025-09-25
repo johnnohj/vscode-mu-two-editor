@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import { MuDebugAdapter } from '../protocols/debugAdapter';
+import { MuDebugAdapter } from '../common/debugAdapter';
 import { IDevice, MuDevice } from './deviceDetector';
 import { SerialMonitorCooperativeManager } from './serialMonitorCooperativeManager';
-import { getLogger } from '../../sys/unifiedLogger';
+import { getLogger } from '../../utils/unifiedLogger';
 
 /**
  * Device Connection State

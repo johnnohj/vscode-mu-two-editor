@@ -4,8 +4,6 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import {ClipboardAddon} from '@xterm/addon-clipboard';
 import { CircuitPythonLanguageClient, CompletionItem } from './CircuitPythonLanguageClient';
-import { initializeWasmReplUI } from './WasmReplUI';
-import './wasm-repl.css';
 
 declare global {
 	interface Window {
@@ -42,12 +40,16 @@ interface ExtensionMessage {
   type: 'display' | 'commandHistory' | 'sessionRestore' | 'clear' | 'serialData' | 'serialConnect' | 'serialDisconnect' |
         'runtime.statusUpdate' | 'wasm.initializationStart' | 'wasm.initializationComplete' | 'hardware.stateUpdate' | 'runtime.error' |
         // Phase 4C: CLI Response Messages
-        'cli-response' | 'interrupt-ack' | 'restart-ack' | 'task-started' | 'task-ended' | 'task-progress' | 'task-completed';
+        'cli-response' | 'interrupt-ack' | 'restart-ack' | 'task-started' | 'task-ended' | 'task-progress' | 'task-completed' |
+        // Unified Terminal Backend
+        'venv_ready' | 'venv_progress' | 'pty_ready' | 'terminal_output';
   data: {
     content?: string;
     commands?: string[];
     sessionContent?: string;
     port?: string;
+    progress?: number;
+    message?: string;
   };
   // WASM-specific properties
   runtime?: 'blinka-python' | 'wasm-circuitpython' | 'pyscript';
@@ -68,11 +70,15 @@ interface TerminalMessage {
   type: 'command' | 'requestHistory' | 'requestRestore' | 'syncContent' |
         'runtime.switch' | 'runtime.connect' | 'runtime.disconnect' |
         // Phase 4C: CLI Command Messages
-        'cli-command' | 'keyboard-interrupt' | 'soft-restart' | 'task-status' | 'task-cancel';
+        'cli-command' | 'keyboard-interrupt' | 'soft-restart' | 'task-status' | 'task-cancel' |
+        // PTY Bridge Messages
+        'terminal_input';
   data: {
     command?: string;
     historyDirection?: 'up' | 'down';
     terminalContent?: string;
+    // PTY Bridge data
+    input?: string;
   };
   // Runtime-specific properties
   runtime?: 'blinka-python' | 'wasm-circuitpython' | 'pyscript';
@@ -99,18 +105,17 @@ class CommandTerminal {
 		tabCompletions: CompletionItem[];
 		completionIndex: number;
 		originalInput: string;
-		// Runtime state
-		currentRuntime: 'blinka-python' | 'wasm-circuitpython' | 'pyscript' | null;
-		runtimeStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
-		wasmInitializing: boolean;
-		hardwareState: any;
+		// Unified backend state
+		deviceConnected: boolean;
 		// Phase 4C: Micro-repl patterns
-		replState: 'idle' | 'executing' | 'waiting_prompt' | 'error';
+		replState: 'awaiting_venv' | 'idle' | 'executing' | 'waiting_prompt' | 'error';
 		commandQueue: Map<string, {resolve: Function, reject: Function, timeout?: number}>;
 		sessionActive: boolean;
 		// Blinka glyph support
 		blinkaGlyphAvailable: boolean;
 		fontLoaded: boolean;
+		// PTY Bridge state
+		ptyMode: boolean;
 	};
 
 	constructor() {
@@ -129,20 +134,19 @@ class CommandTerminal {
 			tabCompletions: [],
 			completionIndex: -1,
 			originalInput: '',
-			// Runtime state initialization
-			currentRuntime: null,
-			runtimeStatus: 'disconnected',
-			wasmInitializing: false,
-			hardwareState: null,
+			// Unified backend initialization
+			deviceConnected: false,
 			// Phase 4C: Micro-repl patterns initialization
-			replState: 'idle',
+			replState: 'awaiting_venv',
 			commandQueue: new Map(),
 			sessionActive: false,
 			// Blinka glyph support initialization
 			blinkaGlyphAvailable: false,
-			fontLoaded: false
+			fontLoaded: false,
+			// PTY Bridge state
+			ptyMode: false
 		};
-		
+
 		this.init();
 	}
 
@@ -162,6 +166,12 @@ class CommandTerminal {
 		this.setupTerminal();
 		this.setupEventListeners();
 		this.setupMicroReplPatterns();
+
+		// Send webviewReady message to trigger initial state
+		this.sendMessage({
+			type: 'webviewReady',
+			data: {}
+		});
 
 		// Request session restoration
 		this.sendMessage({
@@ -248,6 +258,7 @@ class CommandTerminal {
 	/**
 	 * Test if Blinka glyph (ϴ) renders properly in the font
 	 */
+	// TODO: Blinka glyph is in the Unicode extended private use - try that sequence
 	private async testBlinkaGlyph(): Promise<boolean> {
 		try {
 			const canvas = document.createElement('canvas');
@@ -290,6 +301,7 @@ class CommandTerminal {
 		// Enhanced data handler with micro-repl control character support
 		this.terminal.onData((data) => {
 			// Handle control characters like micro-repl
+			// TODO: Check if user text selection first - don't block Ctrl+C = copy
 			if (data === '\x03') { // Ctrl+C
 				this.handleKeyboardInterrupt();
 				return;
@@ -352,7 +364,7 @@ class CommandTerminal {
 
 		this.fitAddon = new FitAddon();
 		this.serializeAddon = new SerializeAddon();
-		
+
 		this.terminal.loadAddon(this.fitAddon);
 		this.terminal.loadAddon(this.serializeAddon);
 
@@ -404,7 +416,7 @@ class CommandTerminal {
 
 	handleExtensionMessage(message: ExtensionMessage) {
 		console.log('[Webview] Received message:', message);
-		
+
 		switch (message.type) {
 			case 'display':
 				if (message.data.content) {
@@ -414,14 +426,14 @@ class CommandTerminal {
 				// Sync terminal content after display update
 				setTimeout(() => this.syncTerminalContent(), 50);
 				break;
-				
+
 			case 'clear':
 				this.terminal?.clear();
 				this.showPrompt();
 				// Sync terminal content after clear
 				setTimeout(() => this.syncTerminalContent(), 50);
 				break;
-				
+
 			case 'sessionRestore':
 				if (message.data.sessionContent) {
 					this.restoreSession(message.data.sessionContent);
@@ -431,25 +443,27 @@ class CommandTerminal {
 				// Sync terminal content after session restore
 				setTimeout(() => this.syncTerminalContent(), 50);
 				break;
-				
+
 			case 'commandHistory':
 				if (message.data.commands) {
 					this.state.commandHistory = message.data.commands;
 				}
 				break;
-				
+
 			case 'serialConnect':
 				this.state.connected = true;
+				this.state.deviceConnected = true;
 				if (message.data.port) {
 					this.writeOutput(`Connected to ${message.data.port}`);
 				}
 				break;
-				
+
 			case 'serialDisconnect':
 				this.state.connected = false;
+				this.state.deviceConnected = false;
 				this.writeOutput('Disconnected from device');
 				break;
-				
+
 			case 'serialData':
 				// Handle direct serial communication data
 				if (message.data.content) {
@@ -532,6 +546,55 @@ class CommandTerminal {
 					this.terminal?.write(`🎉 Task finished: ${message.taskId}\r\n`);
 				}
 				break;
+
+			case 'venv_ready':
+				// Virtual environment is ready - switch from waiting state to active REPL
+				if (this.state.replState === 'awaiting_venv') {
+					this.state.replState = 'idle';
+					this.terminal?.clear(); // Clear the waiting message
+					this.writeOutput('✅ Python virtual environment ready!\r\n');
+					this.showPrompt(); // Show the normal prompt
+				}
+				break;
+
+			case 'pty_ready':
+				// PTY-based unified REPL is ready - transition to PTY mode for webview bridge
+				if (this.state.replState === 'awaiting_venv') {
+					this.state.ptyMode = true;
+					this.state.replState = 'idle';
+					this.terminal?.clear();
+
+					// Show educational message about dual-mode functionality
+					const welcomeMsg = `🐍 Mu Two Editor - Unified REPL
+
+Shell commands (pip, circup, ls) → Python virtual environment
+Python REPL commands → CircuitPython device (when connected)
+
+📚 Learning Tip: This REPL is available in TWO ways:
+  1. 🎯 Here (beginner-friendly): Centrally located for quick access
+  2. 🔧 Native Terminal: Run "Mu 2: Open Mu 2 Shell Terminal" from Command Palette
+
+Each mode gets its own independent session - perfect for running multiple operations!
+
+`;
+					this.writeOutput(welcomeMsg);
+					// PTY will handle the prompt
+				}
+				break;
+
+			case 'terminal_output':
+				// Display PTY output in webview terminal
+				if (this.state.ptyMode && message.data.content) {
+					this.terminal?.write(message.data.content);
+				}
+				break;
+
+			case 'venv_progress':
+				// Update venv creation progress bar
+				if (this.state.replState === 'awaiting_venv' && message.data.progress !== undefined) {
+					this.updateVenvProgress(message.data.progress, message.data.message || '');
+				}
+				break;
 		}
 	}
 
@@ -543,6 +606,18 @@ class CommandTerminal {
 	private handleRegularInput(data: string): void {
 		if (!this.terminal) return;
 
+		// If in PTY mode, forward all input to PTY backend
+		if (this.state.ptyMode) {
+			this.sendMessage({
+				type: 'terminal_input',
+				data: {
+					input: data
+				}
+			});
+			return;
+		}
+
+		// Legacy webview input handling for non-PTY mode
 		if (data === '\r') {
 			// Enter pressed - process command with micro-repl patterns
 			this.terminal.writeln('');
@@ -855,19 +930,19 @@ class CommandTerminal {
 		if (!this.terminal || this.state.commandHistory.length === 0) {return};
 
 		let newIndex = this.state.historyIndex;
-		
+
 		if (direction === 'up') {
 			newIndex = newIndex < this.state.commandHistory.length - 1 ? newIndex + 1 : newIndex;
 		} else {
 			newIndex = newIndex > -1 ? newIndex - 1 : -1;
 		}
-		
+
 		if (newIndex !== this.state.historyIndex) {
 			// Clear current input line
 			this.clearCurrentLine();
-			
+
 			this.state.historyIndex = newIndex;
-			
+
 			if (newIndex === -1) {
 				// Show empty input
 				this.state.currentInput = '';
@@ -889,7 +964,7 @@ class CommandTerminal {
 
 	clearCurrentLine() {
 		if (!this.terminal) return;
-		
+
 		// Move cursor to start of line and clear to end of line
 		this.terminal.write('\r\x1b[2K');
 	}
@@ -909,15 +984,15 @@ class CommandTerminal {
 
 	private insertBlankLinesAtTop(lineCount: number) {
 		if (!this.terminal) return;
-		
+
 		// Move cursor to top and insert blank lines
 		this.terminal.write('\x1b[H'); // Move cursor to home position (1,1)
-		
+
 		// Insert lines using xterm.js sequence - this pushes existing content down
 		for (let i = 0; i < lineCount; i++) {
 			this.terminal.write('\x1b[L'); // Insert line (pushes content down)
 		}
-		
+
 		// Move cursor back to home position for content writing
 		this.terminal.write('\x1b[H');
 	}
@@ -938,6 +1013,69 @@ class CommandTerminal {
 	}
 
 	/**
+	 * Show message about PTY terminal being ready
+	 */
+	private showPtyTerminalMessage(terminalId: string): void {
+		if (!this.terminal) return;
+
+		this.terminal.clear();
+
+		const message = `🚀 Unified REPL Ready!
+
+The Mu Two Editor unified REPL is now running in a native VS Code terminal.
+
+📍 Terminal Name: "${terminalId}"
+📍 Location: Terminal panel (View → Terminal)
+
+✨ Features:
+• Shell commands (pip, circup, ls) → Python virtual environment
+• Python/CircuitPython code → Device communication
+• Native terminal experience with history, copy/paste, etc.
+
+💡 You can use either:
+   1. This webview terminal (below)
+   2. The native VS Code terminal "${terminalId}"
+
+Both are connected to the same unified REPL backend!
+`;
+
+		this.writeOutput(message + '\r\n\r\n');
+		this.writeOutput('🎯 Try: pip --version\r\n\r\n');
+
+		// Transition to normal REPL state
+		this.state.replState = 'idle';
+		this.showPrompt();
+	}
+
+	/**
+	 * Update virtual environment setup progress with visual progress bar
+	 */
+	private updateVenvProgress(progress: number, message: string): void {
+		if (!this.terminal) return;
+
+		// Move to the beginning of the progress area (2 lines below "Awaiting...")
+		this.terminal.write('\r\n\x1b[2K'); // New line and clear line
+
+		// Draw progress bar using ASCII characters
+		const barWidth = 40;
+		const filled = Math.round((progress / 100) * barWidth);
+		const empty = barWidth - filled;
+
+		const filledBar = '█'.repeat(filled);
+		const emptyBar = '░'.repeat(empty);
+
+		// Use orange color to match terminal theme
+		const progressLine = `\x1b[38;2;210;117;55m[${filledBar}${emptyBar}] ${progress}%\x1b[0m`;
+
+		// Write progress bar and message
+		this.terminal.write(progressLine + '\r\n');
+		this.terminal.write(`\x1b[38;2;210;117;55m${message}\x1b[0m`);
+
+		// Move cursor back up to keep it positioned correctly
+		this.terminal.write('\x1b[2A'); // Move up 2 lines
+	}
+
+	/**
 	 * Phase 4C: Enhanced state-aware prompt with proper Blinka glyph support
 	 */
 	private getPromptForCurrentRuntime(): string {
@@ -946,6 +1084,8 @@ class CommandTerminal {
 
 		// Micro-repl style dynamic prompts based on state
 		switch (this.state.replState) {
+			case 'awaiting_venv':
+				return 'Awaiting virtual environment confirmation...';
 			case 'executing':
 				return '... ';
 			case 'waiting_prompt':
@@ -956,22 +1096,11 @@ class CommandTerminal {
 				break;
 		}
 
-		// Runtime-specific prompts
-		switch (this.state.currentRuntime) {
-			case 'wasm-circuitpython':
-				return this.state.runtimeStatus === 'connected'
-					? `${blinkaGlyph}>> `
-					: `wasm${blinkaGlyph}> `;
-			case 'pyscript':
-				return this.state.runtimeStatus === 'connected'
-					? `${blinkaGlyph}>> `
-					: `pyscript${blinkaGlyph}> `;
-			case 'blinka-python':
-				return this.state.connected
-					? `${blinkaGlyph}>> `
-					: `blinka${blinkaGlyph}> `;
-			default:
-				return `mu${blinkaGlyph}> `;
+		// Unified prompt based on device connection
+		if (this.state.deviceConnected) {
+			return `>>> `; // Device connected - CircuitPython REPL
+		} else {
+			return `mu2> `; // Shell mode - pip, circup, etc.
 		}
 	}
 
@@ -1023,66 +1152,66 @@ Ready for CircuitPython magic! ✨
 
 	private addPaddingBelowPrompt() {
 		if (!this.terminal) return;
-		
+
 		// Save current cursor position (after prompt)
 		this.terminal.write('\x1b[s'); // Save cursor position
-		
+
 		// Add blank lines below the prompt
 		this.terminal.write('\r\n\r\n\r\n\r\n');
-		
+
 		// Restore cursor to original position (right after prompt)
 		this.terminal.write('\x1b[u'); // Restore cursor position
 	}
 
 	private addSmartOverscrollPadding() {
 		if (!this.terminal) return;
-		
+
 		// Get terminal state
 		const viewportHeight = this.terminal.rows;
 		const currentRow = this.terminal.buffer.active.cursorY;
 		const buffer = this.terminal.buffer.active;
 		const totalLines = buffer.length;
-		
+
 		// Calculate how much content exists above the current prompt
 		const contentAbovePrompt = currentRow;
-		
+
 		// Only add overscroll padding if:
 		// 1. We have significant content above (welcome message + some history)
 		// 2. We're not already at the bottom causing auto-scroll
 		// 3. There's room to add padding without triggering scroll
-		
+
 		const hasSignificantContent = contentAbovePrompt >= 3; // At least welcome message
 		const distanceFromBottom = viewportHeight - currentRow - 1;
 		const canAddPaddingWithoutScroll = distanceFromBottom >= 2;
-		
+
 		if (hasSignificantContent && canAddPaddingWithoutScroll) {
 			// Add conservative padding - just 1-2 lines to enable scroll-up UX
 			const paddingLines = Math.min(2, distanceFromBottom - 1);
-			
+
 			if (paddingLines > 0) {
 				// Save current cursor position
 				this.terminal.write('\x1b[s'); // Save cursor position
-				
+
 				// Add minimal padding lines
 				for (let i = 0; i < paddingLines; i++) {
 					this.terminal.write('\r\n');
 				}
-				
+
 				// Restore cursor to original position (right after prompt)
 				this.terminal.write('\x1b[u'); // Restore cursor position
 			}
 		}
-		
+
 		// If conditions aren't met, no padding is added - natural terminal behavior
 	}
 
 	restoreSession(sessionContent: string) {
 		if (!this.terminal) return;
-		
+
 		// Clear terminal and write session content
 		this.terminal.clear();
 		this.writeOutput(sessionContent);
-		
+
 		// Don't show prompt after restoration - let extension handle it
 	}
 
@@ -1094,7 +1223,7 @@ Ready for CircuitPython magic! ✨
 
 	handleTerminalClick(event: MouseEvent) {
 		if (!this.terminal) return;
-		
+
 		// With post-welcome padding, we don't need to prevent clicks in blank areas
 		// The blank lines are below the content and users naturally can't interact there
 		// This method can be expanded later if needed for other click constraints
@@ -1154,7 +1283,7 @@ Ready for CircuitPython magic! ✨
 
 		try {
 			const completions = await this.languageClient.getCompletions(currentInput, cursorPosition);
-			
+
 			if (completions.length === 0) {
 				// No completions available, maybe show a subtle indication
 				return;
@@ -1181,7 +1310,7 @@ Ready for CircuitPython magic! ✨
 		// Move to next completion (wrap around)
 		this.state.completionIndex = (this.state.completionIndex + 1) % this.state.tabCompletions.length;
 		const completion = this.state.tabCompletions[this.state.completionIndex];
-		
+
 		this.showCompletion(completion);
 	}
 
@@ -1193,7 +1322,7 @@ Ready for CircuitPython magic! ✨
 
 		// Determine what to insert
 		const insertText = completion.insertText || completion.label;
-		
+
 		// Update state and display
 		this.state.currentInput = this.getCompletionInput(insertText);
 		this.terminal.write(this.state.currentInput);
@@ -1217,7 +1346,7 @@ Ready for CircuitPython magic! ✨
 		// In more complex cases, we might need to parse the current input
 		// and replace only the relevant part
 		const currentInput = this.state.originalInput || this.state.currentInput;
-		
+
 		// Find the last word/identifier to replace
 		const match = currentInput.match(/.*[.\s](\w*)$/);
 		if (match) {
@@ -1225,13 +1354,13 @@ Ready for CircuitPython magic! ✨
 			const prefix = currentInput.substring(0, currentInput.length - match[1].length);
 			return prefix + insertText;
 		}
-		
+
 		// If no partial word found, check if we're at module level
 		const moduleMatch = currentInput.match(/^(\w*)$/);
 		if (moduleMatch) {
 			return insertText;
 		}
-		
+
 		// Default: append the completion
 		return currentInput + insertText;
 	}
@@ -1255,10 +1384,7 @@ Ready for CircuitPython magic! ✨
 function initializeComponents() {
 	console.log('Initializing webview components...');
 
-	// Initialize WASM UI first (this sets up the VS Code API)
-	initializeWasmReplUI();
-
-	// Wait a bit, then initialize terminal
+	// Initialize terminal directly with unified backend
 	setTimeout(() => {
 		console.log('Initializing terminal...');
 		window.terminal = new CommandTerminal();

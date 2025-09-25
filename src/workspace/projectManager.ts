@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { FileOperations } from './filesystem/fileOperations';
 import { LibraryManager } from './integration/libraryManager';
-import { getLogger } from '../sys/unifiedLogger';
+import { getLogger } from '../utils/unifiedLogger';
 
 // Project Management System - Jukebox/CD Changer Pattern
 export class ProjectManager implements vscode.Disposable {

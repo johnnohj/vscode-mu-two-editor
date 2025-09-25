@@ -20,7 +20,7 @@
 		"Other"
 	],
 	"extensionDependencies": [
-		"ms-python.python"
+
 	],
 	"optionalExtensionDependencies": [
 		"ms-vscode.vscode-serial-monitor"
@@ -446,6 +446,12 @@
 				"command": "muTwo.dev.clearTestWorkspaceData",
 				"category": "Mu 2 Development",
 				"title": "Clear Test Workspace Data"
+			},
+			{
+				"command": "muTwo.repl.openNativeTerminal",
+				"category": "Mu 2",
+				"title": "Open Mu 2 Shell Terminal",
+				"icon": "$(terminal)"
 			}
 		],
 		"configuration": {
@@ -604,6 +610,77 @@
 					"minimum": 100,
 					"maximum": 10000,
 					"description": "Maximum number of transactions to display in timeline"
+				},
+				"muTwo.terminal.preferredShell": {
+					"type": "string",
+					"enum": ["bash", "git-bash", "pwsh"],
+					"default": "bash",
+					"description": "Preferred shell for Mu 2 terminal profile",
+					"enumDescriptions": [
+						"Bash shell (Unix/Linux/WSL)",
+						"Git Bash (Windows Git installation)",
+						"PowerShell (Windows/Cross-platform)"
+					]
+				},
+				"muTwo.terminal.enableShellIntegration": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable VS Code shell integration features (command history, tab completion, etc.)"
+				},
+				"muTwo.terminal.autoActivateVenv": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically activate Mu Two Python virtual environment in terminal"
+				},
+				"muTwo.terminal.setAsDefaultProfile": {
+					"type": "boolean",
+					"default": true,
+					"description": "Set Mu 2 Shell as the default terminal profile for workspaces"
+				},
+				"muTwo.python.environmentPath": {
+					"type": "string",
+					"description": "Path to Python virtual environment (leave empty for automatic management)"
+				},
+				"muTwo.python.autoSetupEnvironment": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically set up and manage Python virtual environment for CircuitPython development"
+				},
+				"muTwo.python.requiredPackages": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [
+						"circup",
+						"pyserial"
+					],
+					"description": "Python packages required for CircuitPython development (automatically installed)"
+				},
+				"muTwo.python.validateEnvironmentOnStartup": {
+					"type": "boolean",
+					"default": true,
+					"description": "Validate Python environment on extension startup"
+				},
+				"muTwo.environment.showDebugInfo": {
+					"type": "boolean",
+					"default": false,
+					"description": "Show detailed environment variable debug information in output channel"
+				},
+				"muTwo.environment.persistEnvironment": {
+					"type": "boolean",
+					"default": true,
+					"description": "Persist environment configuration across VS Code sessions"
+				},
+				"muTwo.tasks.useIntegratedTerminal": {
+					"type": "boolean",
+					"default": true,
+					"description": "Use integrated terminal for task execution with proper environment coordination"
+				},
+				"muTwo.tasks.showTaskOutput": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically show task output in terminal"
 				}
 			}
 		}

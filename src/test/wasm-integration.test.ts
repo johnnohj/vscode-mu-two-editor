@@ -7,8 +7,8 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { WasmRuntimeManager } from '../sys/wasmRuntimeManager';
-import { MuDebugAdapter } from '../devices/protocols/debugAdapter';
+import { WasmRuntimeManager } from '../runtime/wasm/wasmRuntimeManager';
+import { MuDebugAdapter } from '../devices/common/debugAdapter';
 
 suite('WASM Integration Tests', () => {
     let wasmRuntimeManager: WasmRuntimeManager;

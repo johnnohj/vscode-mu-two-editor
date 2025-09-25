@@ -1,4 +1,4 @@
-import { getLogger } from '../../sys/unifiedLogger';
+import { getLogger } from '../../utils/unifiedLogger';
 
 export interface CommandResult {
     output: string;
