@@ -1,23 +1,16 @@
 import * as vscode from 'vscode';
-import { ProjectManager } from '../projectManager';
-import { BoardManager } from '../../devices/management/boardManager';
-import { LibraryManager } from '../integration/libraryManager';
-import { FileOperations } from './fileOperations';
+import { SyncCoordinator } from '../syncCoordinator';
 import { getLogger } from '../../utils/unifiedLogger';
 
-// Save-Twice Handler with Project Integration
+// Save-Twice Handler using SyncCoordinator
 export class FileSaveTwiceHandler implements vscode.Disposable {
     private _disposables: vscode.Disposable[] = [];
     private _logger = getLogger();
-    private _libraryManager: LibraryManager;
 
     constructor(
         private context: vscode.ExtensionContext,
-        private projectManager: ProjectManager,
-        private boardManager: BoardManager
+        private syncCoordinator: SyncCoordinator
     ) {
-        // Using unified logger instead of createOutputChannel
-        this._libraryManager = new LibraryManager();
         this.setupSaveHandler();
     }
 
@@ -34,32 +27,37 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
     private async handleManualSave(document: vscode.TextDocument): Promise<void> {
         try {
             const filePath = document.uri.path;
-            
-            // Only handle files in mcu-device/current directory
-            if (!filePath.includes('/mcu-device/current/')) {
-                return;
-            }
-
             const fileName = filePath.split('/').pop();
-            if (!fileName || (!fileName.includes('code.py') && !fileName.includes('main.py'))) {
-                return; // Only handle code.py and main.py
+
+            // Check if this is a file we need to sync (code.py, main.py, or lib/ contents)
+            const isRelevantFile = fileName && (
+                fileName.includes('code.py') ||
+                fileName.includes('main.py') ||
+                filePath.includes('/lib/')
+            );
+
+            if (!isRelevantFile) {
+                return; // Not a file we need to sync
             }
 
-            this._logger.info('WORKSPACE', `Processing save-twice for: ${fileName}`);
+            this._logger.info('WORKSPACE', `Processing sync save for: ${fileName}`);
 
-            // 1. Update project backup (replaces .board logic)
-            await this.updateProjectBackup(document.uri);
+            // Delegate to SyncCoordinator for project-aware handling
+            const success = await this.syncCoordinator.handleFileSave(document.uri);
 
-            // 2. Update lib.json if needed
-            await this.updateLibraryManifest();
+            if (success) {
+                const projectName = this.syncCoordinator.getCurrentProjectName();
+                const boardConnected = this.syncCoordinator.isBoardConnected();
 
-            // 3. Check for connected boards using existing BoardManager
-            const connectedBoards = this.boardManager.getConnectedBoards();
-            if (connectedBoards.length > 0) {
-                await this.syncToConnectedBoards(document.uri, connectedBoards);
+                if (projectName && boardConnected) {
+                    this._logger.info('WORKSPACE', `File saved to project '${projectName}' and synced to board`);
+                } else if (projectName) {
+                    this._logger.info('WORKSPACE', `File saved to project '${projectName}' (board will sync when connected)`);
+                } else {
+                    this._logger.info('WORKSPACE', 'File saved - project created');
+                }
             } else {
-                this._logger.info('WORKSPACE', 'No connected CircuitPython boards - saved to project backup only');
-                vscode.window.showInformationMessage('💾 File saved to project backup (no board connected)');
+                this._logger.warn('WORKSPACE', 'File save sync failed or was cancelled');
             }
 
         } catch (error) {
@@ -67,111 +65,8 @@ export class FileSaveTwiceHandler implements vscode.Disposable {
         }
     }
 
-    private async updateProjectBackup(savedFileUri: vscode.Uri): Promise<void> {
-        try {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length < 2) {
-                return;
-            }
-
-            const localRoot = workspaceFolders[0];
-            const projectsDir = vscode.Uri.joinPath(localRoot.uri, 'projects');
-            await FileOperations.ensureDirectoryExists(projectsDir);
-
-            const currentProjectName = this.projectManager.getCurrentProjectName();
-            let backupDir: vscode.Uri;
-
-            if (currentProjectName) {
-                backupDir = vscode.Uri.joinPath(projectsDir, currentProjectName);
-                this._logger.info('WORKSPACE', `Backing up to project: ${currentProjectName}`);
-            } else {
-                backupDir = vscode.Uri.joinPath(projectsDir, '.current');
-                this._logger.info('WORKSPACE', 'Backing up to .current');
-            }
-
-            await FileOperations.ensureDirectoryExists(backupDir);
-
-            // Copy the saved file to backup directory
-            const fileName = savedFileUri.path.split('/').pop()!;
-            const backupFileUri = vscode.Uri.joinPath(backupDir, fileName);
-
-            await vscode.workspace.fs.copy(savedFileUri, backupFileUri, { overwrite: true });
-            this._logger.info('WORKSPACE', `Backed up ${fileName} to project directory`);
-
-        } catch (error) {
-            this._logger.error('WORKSPACE', `Failed to update project backup: ${error}`);
-        }
-    }
-
-    private async updateLibraryManifest(): Promise<void> {
-        try {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length < 2) {
-                return;
-            }
-
-            const localRoot = workspaceFolders[0];
-            const remoteRoot = workspaceFolders[1];
-            const currentLibDir = vscode.Uri.joinPath(remoteRoot.uri, 'current', 'lib');
-            const projectsDir = vscode.Uri.joinPath(localRoot.uri, 'projects');
-
-            const currentProjectName = this.projectManager.getCurrentProjectName();
-            let targetDir: vscode.Uri;
-
-            if (currentProjectName) {
-                targetDir = vscode.Uri.joinPath(projectsDir, currentProjectName);
-            } else {
-                targetDir = vscode.Uri.joinPath(projectsDir, '.current');
-            }
-
-            await this._libraryManager.generateLibraryManifest(currentLibDir, targetDir);
-
-        } catch (error) {
-            this._logger.error('WORKSPACE', `Failed to update library manifest: ${error}`);
-        }
-    }
-
-    private async syncToConnectedBoards(savedFileUri: vscode.Uri, boards: any[]): Promise<void> {
-        const fileName = savedFileUri.path.split('/').pop()!;
-
-        await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: `Syncing ${fileName} to remote device`,
-            cancellable: false
-        }, async (progress) => {
-            const increment = 100 / boards.length;
-            
-            for (let i = 0; i < boards.length; i++) {
-                const board = boards[i];
-                progress.report({ 
-                    increment: i === 0 ? 0 : increment, 
-                    message: `Copying to ${board.name}...` 
-                });
-
-                try {
-                    // Use board's file operations to write to the device
-                    if (board.isConnected()) {
-                        const content = await vscode.workspace.fs.readFile(savedFileUri);
-                        await board.writeFile(fileName, content);
-                        this._logger.info('WORKSPACE', `Synced ${fileName} to ${board.name}`);
-                    } else {
-                        this._logger.warn('WORKSPACE', `Board ${board.name} is no longer connected`);
-                    }
-                } catch (error) {
-                    this._logger.error('WORKSPACE', `Failed to sync to ${board.name}: ${error}`);
-                }
-            }
-            
-            progress.report({ increment: increment, message: 'Complete!' });
-        });
-
-        vscode.window.showInformationMessage(`💾 ${fileName} saved and synced to ${boards.length} board(s)`);
-    }
-
     public dispose(): void {
         this._disposables.forEach(d => d.dispose());
         this._disposables = [];
-        // Using unified logger - no manual disposal needed
-        this._libraryManager.dispose();
     }
 }

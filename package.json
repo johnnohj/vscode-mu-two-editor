@@ -27,13 +27,13 @@
 	],
 	"activationEvents": [
 		"onLanguage:python",
-		"onCustomEditor:muTwo.editor.editView",
 		"onCommand:muTwo.workspace.create",
 		"onCommand:muTwo.workspace.open",
 		"onCommand:muTwo.editor.openEditor",
 		"workspaceContains:**/*.py",
 		"workspaceContains:**/code.py",
-		"workspaceContains:**/main.py"
+		"workspaceContains:**/main.py",
+		"onFileSystem:mutwo"
 	],
 	"main": "./dist/extension.js",
 	"files": [
@@ -90,6 +90,34 @@
 					"when": "activeWebviewPanelId == 'muTwo.connectedRepl' && muTwo.connectedRepl.headerCollapsed != true",
 					"icon": "$(chevron-up)",
 					"title": "Hide Panel Header",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.editor.showPlotterHeader",
+					"when": "activeWebviewPanelId == 'muTwo.connectedPlotter' && muTwo.connectedPlotter.headerCollapsed == true",
+					"icon": "$(chevron-down)",
+					"title": "Show Panel Header",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.editor.hidePlotterHeader",
+					"when": "activeWebviewPanelId == 'muTwo.connectedPlotter' && muTwo.connectedPlotter.headerCollapsed != true",
+					"icon": "$(chevron-up)",
+					"title": "Hide Panel Header",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.editor.showHardwarePanel",
+					"when": "activeWebviewPanelId == 'muTwo.connectedRepl' && muTwo.connectedHardware.exists != true",
+					"icon": "$(circuit-board)",
+					"title": "Show Hardware Simulator",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.editor.showPlotterPanel",
+					"when": "activeWebviewPanelId == 'muTwo.connectedRepl' && muTwo.connectedPlotter.exists != true",
+					"icon": "$(graph)",
+					"title": "Show Data Plotter",
 					"group": "navigation"
 				}
 			],
@@ -294,6 +322,30 @@
 				"title": "Mu 2 editor subpanel header: Hide"
 			},
 			{
+				"command": "muTwo.editor.showPlotterHeader",
+				"when": "activeWebviewPanelId == 'muTwo.connectedPlotter' && muTwo.connectedPlotter.headerCollapsed == true",
+				"icon": "$(chevron-down)",
+				"title": "Mu 2 plotter panel header: Show"
+			},
+			{
+				"command": "muTwo.editor.hidePlotterHeader",
+				"when": "activeWebviewPanelId == 'muTwo.connectedPlotter' && muTwo.connectedPlotter.headerCollapsed != true",
+				"icon": "$(chevron-up)",
+				"title": "Mu 2 plotter panel header: Hide"
+			},
+			{
+				"command": "muTwo.editor.showHardwarePanel",
+				"category": "Mu 2",
+				"icon": "$(circuit-board)",
+				"title": "Show Hardware Simulator"
+			},
+			{
+				"command": "muTwo.editor.showPlotterPanel",
+				"category": "Mu 2",
+				"icon": "$(graph)",
+				"title": "Show Data Plotter"
+			},
+			{
 				"command": "muTwo.editor.openEditor",
 				"category": "Mu 2",
 				"title": "Open Python File with Split View"
@@ -478,6 +530,11 @@
 					"default": true,
 					"description": "Automatically download board guides when available"
 				},
+				"muTwo.circuitPythonDriveName": {
+					"type": "string",
+					"default": "CIRCUITPY",
+					"description": "Name of the CircuitPython drive to look for when detecting connected boards"
+				},
 				"muTwo.serialMonitor.enableCooperation": {
 					"type": "boolean",
 					"default": true,
@@ -609,7 +666,11 @@
 				},
 				"muTwo.terminal.preferredShell": {
 					"type": "string",
-					"enum": ["bash", "git-bash", "pwsh"],
+					"enum": [
+						"bash",
+						"git-bash",
+						"pwsh"
+					],
 					"default": "bash",
 					"description": "Preferred shell for Mu 2 terminal profile",
 					"enumDescriptions": [

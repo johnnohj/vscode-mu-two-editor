@@ -1,189 +1,70 @@
 import * as vscode from 'vscode';
-import { FileOperations } from './filesystem/fileOperations';
+import { SyncCoordinator } from './syncCoordinator';
 import { LibraryManager } from './integration/libraryManager';
 import { getLogger } from '../utils/unifiedLogger';
 
-// Project Management System - Jukebox/CD Changer Pattern
+// Project Management System - Simplified with SyncCoordinator
 export class ProjectManager implements vscode.Disposable {
     private _disposables: vscode.Disposable[] = [];
-    private _currentProjectName: string | null = null;
     private _libraryManager: LibraryManager;
     private logger = getLogger();
 
     constructor(
         private context: vscode.ExtensionContext,
-        // Using unified logger instead of createOutputChannel
+        private syncCoordinator: SyncCoordinator
     ) {
         this._libraryManager = new LibraryManager();
     }
 
     /**
-     * Get the current project name, or null if using .current
+     * Get the current project name from SyncCoordinator
      */
     public getCurrentProjectName(): string | null {
-        return this._currentProjectName;
+        return this.syncCoordinator.getCurrentProjectName();
     }
 
     /**
-     * Load a project from projects directory to current
+     * Load a project using SyncCoordinator
      */
     public async loadProject(projectName: string): Promise<boolean> {
-        try {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length < 2) {
-                vscode.window.showErrorMessage('Mu Two workspace structure not found');
-                return false;
-            }
-
-            const mainRoot = workspaceFolders[0];
-            const ctpyRoot = workspaceFolders[1];
-            
-            const projectsDir = vscode.Uri.joinPath(mainRoot.uri, 'projects');
-            const projectDir = vscode.Uri.joinPath(projectsDir, projectName);
-            const currentDir = vscode.Uri.joinPath(ctpyRoot.uri, 'current');
-
-            // Check if project exists
-            try {
-                await vscode.workspace.fs.stat(projectDir);
-            } catch {
-                vscode.window.showErrorMessage(`Project '${projectName}' not found`);
-                return false;
-            }
-
-            // Handle current project backup
-            const backupSuccess = await this.backupCurrentProject();
-            if (!backupSuccess) {
-                return false; // User cancelled or error occurred
-            }
-
-            // Clear current directory
-            await FileOperations.clearDirectory(currentDir);
-
-            // Copy project to current
-            await FileOperations.copyDirectoryContents(projectDir, currentDir);
-
-            this._currentProjectName = projectName;
-            this.logger.info('WORKSPACE', `Loaded project: ${projectName}`);
-            vscode.window.showInformationMessage(`📁 Project '${projectName}' loaded`);
-
-            return true;
-        } catch (error) {
-            this.logger.error('WORKSPACE', `Failed to load project: ${error}`);
-            vscode.window.showErrorMessage(`Failed to load project: ${error}`);
-            return false;
-        }
+        return await this.syncCoordinator.loadProject(projectName);
     }
 
     /**
-     * Save current project with a name
+     * Save current project using SyncCoordinator
      */
     public async saveProjectAs(projectName?: string): Promise<boolean> {
-        try {
-            if (!projectName) {
-                const workspaceFolders = vscode.workspace.workspaceFolders;
-                const ctpyRoot = workspaceFolders && workspaceFolders.length >= 2 ? workspaceFolders[1] : undefined;
-                const autoName = await FileOperations.generateProjectName(ctpyRoot?.uri);
-                projectName = await vscode.window.showInputBox({
-                    prompt: 'Enter project name',
-                    placeHolder: autoName,
-                    value: autoName
-                });
+        const result = await this.syncCoordinator.saveProjectAs(projectName);
 
-                if (!projectName) {
-                    return false; // User cancelled
-                }
-            }
-
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length < 2) {
-                vscode.window.showErrorMessage('Mu Two workspace structure not found');
-                return false;
-            }
-
-            const mainRoot = workspaceFolders[0];
-            const ctpyRoot = workspaceFolders[1];
-            
-            const projectsDir = vscode.Uri.joinPath(mainRoot.uri, 'projects');
-            const projectDir = vscode.Uri.joinPath(projectsDir, projectName);
-            const currentDir = vscode.Uri.joinPath(ctpyRoot.uri, 'current');
-
-            // Ensure projects directory exists
-            await FileOperations.ensureDirectoryExists(projectsDir);
-
-            // Check if project already exists
+        // Update library metadata if save was successful
+        if (result && this.syncCoordinator.getCurrentProjectName()) {
             try {
-                await vscode.workspace.fs.stat(projectDir);
-                const choice = await vscode.window.showWarningMessage(
-                    `Project '${projectName}' already exists. Overwrite?`,
-                    'Overwrite', 'Cancel'
-                );
-                if (choice !== 'Overwrite') {
-                    return false;
+                const workspaceFolders = vscode.workspace.workspaceFolders;
+                if (workspaceFolders && workspaceFolders.length > 0) {
+                    const projectDir = vscode.Uri.joinPath(
+                        workspaceFolders[0].uri,
+                        '.projects',
+                        this.syncCoordinator.getCurrentProjectName()!
+                    );
+                    await this._libraryManager.updateProjectLibraries(projectDir);
                 }
-            } catch {
-                // Project doesn't exist, that's fine
+            } catch (error) {
+                this.logger.warn('WORKSPACE', `Failed to update library metadata: ${error}`);
             }
-
-            // Create/overwrite project directory
-            await FileOperations.ensureDirectoryExists(projectDir);
-            await FileOperations.clearDirectory(projectDir);
-            await FileOperations.copyDirectoryContents(currentDir, projectDir);
-
-            // Generate lib.json
-            await this._libraryManager.updateProjectLibraries(projectDir);
-
-            this._currentProjectName = projectName;
-            this.logger.info('WORKSPACE', `Saved project: ${projectName}`);
-            vscode.window.showInformationMessage(`💾 Project '${projectName}' saved`);
-
-            return true;
-        } catch (error) {
-            this.logger.error('WORKSPACE', `Failed to save project: ${error}`);
-            vscode.window.showErrorMessage(`Failed to save project: ${error}`);
-            return false;
         }
+
+        return result;
     }
 
     /**
-     * Create a new project (backup current, clear current)
+     * Create a new project using SyncCoordinator
      */
     public async createNewProject(): Promise<boolean> {
-        try {
-            // Handle current project backup
-            const backupSuccess = await this.backupCurrentProject();
-            if (!backupSuccess) {
-                return false; // User cancelled or error occurred
-            }
-
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length < 2) {
-                vscode.window.showErrorMessage('Mu Two workspace structure not found');
-                return false;
-            }
-
-            const ctpyRoot = workspaceFolders[1];
-            const currentDir = vscode.Uri.joinPath(ctpyRoot.uri, 'current');
-
-            // Clear current directory
-            await FileOperations.clearDirectory(currentDir);
-
-            // Create basic project structure
-            await FileOperations.createBasicProjectStructure(currentDir);
-
-            this._currentProjectName = null;
-            this.logger.info('WORKSPACE', 'Created new project');
-            vscode.window.showInformationMessage('✨ New project created');
-
-            return true;
-        } catch (error) {
-            this.logger.error('WORKSPACE', `Failed to create new project: ${error}`);
-            vscode.window.showErrorMessage(`Failed to create new project: ${error}`);
-            return false;
-        }
+        return await this.syncCoordinator.createNewProject();
     }
 
     /**
-     * List available projects
+     * List available projects (updated for .projects/ directory)
      */
     public async listProjects(): Promise<string[]> {
         try {
@@ -193,7 +74,7 @@ export class ProjectManager implements vscode.Disposable {
             }
 
             const mainRoot = workspaceFolders[0];
-            const projectsDir = vscode.Uri.joinPath(mainRoot.uri, 'projects');
+            const projectsDir = vscode.Uri.joinPath(mainRoot.uri, '.projects');
 
             try {
                 const entries = await vscode.workspace.fs.readDirectory(projectsDir);
@@ -202,7 +83,7 @@ export class ProjectManager implements vscode.Disposable {
                     .map(([name]) => name)
                     .sort();
             } catch {
-                return []; // Projects directory doesn't exist yet
+                return []; // .projects directory doesn't exist yet
             }
         } catch (error) {
             this.logger.error('WORKSPACE', `Failed to list projects: ${error}`);
@@ -290,6 +171,7 @@ export class ProjectManager implements vscode.Disposable {
         }
     }
 
+    // Note: Backup logic now handled by SyncCoordinator - above method is deprecated
 
     public dispose(): void {
         this._disposables.forEach(d => d.dispose());

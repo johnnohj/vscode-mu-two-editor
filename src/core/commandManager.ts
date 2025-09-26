@@ -189,6 +189,84 @@ function registerEditorCommands(context: vscode.ExtensionContext): void {
         })
     );
 
+    // Show/Hide Connected Plotter Header commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.editor.showPlotterHeader', () => {
+            logger.info('COMMANDS', 'muTwo.editor.showPlotterHeader command triggered');
+
+            if (webviewPanelProvider) {
+                const activePlotterPanels = webviewPanelProvider.getActivePlotterPanels();
+                if (activePlotterPanels.length > 0) {
+                    logger.info('COMMANDS', 'Calling showHeader on first active plotter panel');
+                    activePlotterPanels[0].showHeader();
+                } else {
+                    logger.info('COMMANDS', 'No active plotter panels found');
+                }
+            } else {
+                logger.info('COMMANDS', 'webviewPanelProvider not available');
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.editor.hidePlotterHeader', () => {
+            logger.info('COMMANDS', 'muTwo.editor.hidePlotterHeader command triggered');
+
+            if (webviewPanelProvider) {
+                const activePlotterPanels = webviewPanelProvider.getActivePlotterPanels();
+                if (activePlotterPanels.length > 0) {
+                    logger.info('COMMANDS', 'Calling hideHeader on first active plotter panel');
+                    activePlotterPanels[0].hideHeader();
+                } else {
+                    logger.info('COMMANDS', 'No active plotter panels found');
+                }
+            } else {
+                logger.info('COMMANDS', 'webviewPanelProvider not available');
+            }
+        })
+    );
+
+    // Hardware and Plotter panel commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.editor.showHardwarePanel', async () => {
+            logger.info('COMMANDS', 'muTwo.editor.showHardwarePanel command triggered');
+
+            if (!webviewPanelProvider) {
+                logger.error('COMMANDS', 'webviewPanelProvider is not available');
+                return;
+            }
+
+            // Get the source editor from the active REPL panel
+            const activePanels = webviewPanelProvider.getActivePanels();
+            if (activePanels.length > 0) {
+                const sourceEditor = activePanels[0].getSourceEditor();
+                await webviewPanelProvider.createOrShowHardwarePanel(sourceEditor);
+            } else {
+                logger.warn('COMMANDS', 'No active REPL panels found for hardware panel creation');
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.editor.showPlotterPanel', async () => {
+            logger.info('COMMANDS', 'muTwo.editor.showPlotterPanel command triggered');
+
+            if (!webviewPanelProvider) {
+                logger.error('COMMANDS', 'webviewPanelProvider is not available');
+                return;
+            }
+
+            // Get the source editor from the active REPL panel
+            const activePanels = webviewPanelProvider.getActivePanels();
+            if (activePanels.length > 0) {
+                const sourceEditor = activePanels[0].getSourceEditor();
+                await webviewPanelProvider.createOrShowPlotterPanel(sourceEditor);
+            } else {
+                logger.warn('COMMANDS', 'No active REPL panels found for plotter panel creation');
+            }
+        })
+    );
+
     // Main editor command - opens standard text editor with workspace-aware REPL panel
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.editor.openEditor', async (uri?: vscode.Uri) => {

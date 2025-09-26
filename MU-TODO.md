@@ -121,17 +121,19 @@
 - **libraryManager.ts:100**: TODO: Use existing tools like 'circup' or 'pip' for library syncing and tracking
 - **learnGuideProvider.ts:7**: TODO: Consume Adafruit Learn Guides directly from GitHub repo for offline viewing
 
-### **🔧 System Components (`src/sys/`)**
+### **🔧 System Components (`workspace/filesystem/`)**
 - **fileSystemProvider.ts:15**: TODO: Migrate to 'mutwo://' URI scheme
 - **fileSystemProvider.ts:19**: TODO: Use VS Code API 'fire soon' instead of custom timer
 - **taskRunner.ts:136**: TODO: Use task/shell script with Python/pip writing JSON files instead of spawning processes
+
+### **🔧 Extension State (`src/utils/`)**
 - **extensionStateManager.ts:25**: TODO: Add flag for Python venv activation status
 - **extensionStateManager.ts:296**: TODO: Show user-friendly warning with suggestion to fix
 - **extensionStateManager.ts:304**: TODO: Open documentation about Python environment setup
 - **extensionStateManager.ts:307**: TODO: Trigger Python environment setup retry
 
 ### **🎮 Device & Hardware (`src/devices/`)**
-- **protocols/debugAdapter.ts:225**: TODO: Log/read ticks from hardware to help match chronology
+- **common//debugAdapter.ts:225**: TODO: Log/read ticks from hardware to help match chronology
 - **core/client.ts:116**: TODO: Get default board from device detection
 - **core/client.ts:272**: TODO: Map proper completion item kinds
 - **core/client.ts:294**: TODO: Implement actual device communication through DeviceManager
@@ -139,9 +141,9 @@
 - **core/client.ts:333**: TODO: Add method to DeviceManager for initiating connections
 
 ### **🔌 Providers & Language Services (`src/providers/`)**
-- **editorPanelProvider.ts:40**: TODO: Get default board from configuration
-- **replViewProvider.ts:67**: TODO: Get default board from device detection
-- **webviewPanelProvider.ts:17**: Reference to MU-TODO.md for connected REPL windows feature
+- **views/editorPanelProvider.ts:40**: TODO: Get default board from configuration
+- **views/replViewProvider.ts:67**: TODO: Get default board from device detection
+- **views/webviewPanelProvider.ts:17**: Reference to MU-TODO.md for connected REPL windows feature
 - **language/core/LanguageServiceBridge.ts:564**: TODO: Get version from package.json
 - **language/core/LanguageServiceBridge.ts:666**: TODO: Implement raw data sending to device
 - **language/core/LanguageServiceBridge.ts:708**: TODO: Add clear method to TerminalHistoryManager if not exists
@@ -153,50 +155,3 @@
 - **replSessionHelper.ts:98**: TODO: Connect to physical device via existing device manager
 - **replSessionHelper.ts:149**: TODO: Execute code in WASM runtime
 - **replSessionHelper.ts:170**: TODO: Execute code on physical device
-
-### **🌐 WebView Components (`views/`)**
-- **webview-repl/src/WasmReplUI.tsx:69**: TODO: Implement PyScript support
-
-### **🔍 TODO Completion Status Analysis**
-
-**Generated**: 22 September 2025 by Claude Code Agent Analysis
-**Status**: 1 item completed, 32 items still active, 1 obsolete, 1 reference
-
-**✅ COMPLETED (1 item)**
-- WasmRuntimeManager dispose method - ✅ Implemented and TODO comments removed
-
-**❌ OBSOLETE (1 item)**
-- CSS composition position (xterm.css) - External library TODO, not our responsibility
-
-**📍 CURRENTLY ACTIVE (32 items)**
-The following TODOs represent genuine development work still needed:
-
-### **📈 Priority Assessment**
-
-**🔴 High Priority (Core Functionality)**
-1. Device communication implementation (`src/devices/core/client.ts`)
-2. Python environment setup and retry logic (`src/extension.ts`, `src/sys/extensionStateManager.ts`)
-3. WASM runtime integration (`src/providers/helpers/replSessionHelper.ts`)
-4. Board detection and workspace association (`src/providers/helpers/boardDetectionHelper.ts`)
-
-**🟡 Medium Priority (Developer Experience)**
-1. Extension architecture refactoring (`src/extension.ts` - reduce file size)
-2. File system provider URI scheme migration (`src/sys/fileSystemProvider.ts`)
-3. Library management tool integration (`src/workspace/integration/libraryManager.ts`)
-4. Configuration management improvements (`src/providers/`)
-
-**🟢 Low Priority (Polish & Documentation)**
-1. Version management from package.json (`src/providers/language/core/LanguageServiceBridge.ts`)
-2. User documentation links (`src/extension.ts`, `src/sys/extensionStateManager.ts`)
-3. CSS composition fixes (`views/webview-repl/src/xterm.css`)
-4. PyScript support (`views/webview-repl/src/WasmReplUI.tsx`)
-
-### **✅ Potentially Completed Items**
-Some TODOs may already be addressed but comments weren't removed - audit needed to verify completion status.
-
-### **📝 Recommended Next Steps**
-1. **Audit completion status** - Review each TODO to determine if already implemented
-2. **Prioritize device communication** - Core REPL functionality depends on this
-3. **Address Python environment issues** - Critical for extension stability
-4. **Refactor extension.ts** - Break into smaller, manageable modules
-5. **Update documentation links** - Ensure all help links point to valid resources

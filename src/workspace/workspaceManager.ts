@@ -156,7 +156,7 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
     }
 
     /**
-     * Create the complete file structure for a new workspace
+     * Create the complete file structure for a new workspace (Refined Structure)
      */
     private async createWorkspaceFileStructure(
         workspaceUri: vscode.Uri,
@@ -167,6 +167,9 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
         // Create .vscode/mu2 directory
         const mu2Dir = vscode.Uri.joinPath(workspaceUri, '.vscode', 'mu2');
         await vscode.workspace.fs.createDirectory(mu2Dir);
+
+        // Create refined directory structure
+        await this.createRefinedDirectoryStructure(workspaceUri);
 
         // Create workspace-config.json
         const workspaceConfig: WorkspaceConfig = {
@@ -199,15 +202,20 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
                 associationPath,
                 new TextEncoder().encode(JSON.stringify(boardAssociation, null, 2))
             );
+
+            // Create .mu2 identification file on the CIRCUITPY drive
+            await this.createDeviceIdentificationFile(device, workspaceId, workspaceName);
         }
 
-        // Create downloads directory
-        const downloadsDir = vscode.Uri.joinPath(mu2Dir, 'downloads');
+        // Create temp/downloads directory (refined structure)
+        const tempDir = vscode.Uri.joinPath(mu2Dir, 'temp');
+        await vscode.workspace.fs.createDirectory(tempDir);
+        const downloadsDir = vscode.Uri.joinPath(tempDir, 'downloads');
         await vscode.workspace.fs.createDirectory(downloadsDir);
 
-        // Download learn guide if available
+        // Create board guide as markdown in .resources/ (refined approach)
         if (device) {
-            await this._learnGuideProvider.downloadLearnGuide(device, downloadsDir);
+            await this.createBoardGuideMarkdown(device, workspaceUri);
         }
 
         // Create main code.py file
@@ -227,6 +235,313 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
         );
 
         this._logger.info('WORKSPACE', `Created workspace file structure in ${workspaceUri.fsPath}`);
+    }
+
+    /**
+     * Create refined directory structure according to MU-TODO.md specifications
+     */
+    private async createRefinedDirectoryStructure(workspaceUri: vscode.Uri): Promise<void> {
+        // Create lib/ directory for current project libraries (moved from CIRCUITPY/current/)
+        const libDir = vscode.Uri.joinPath(workspaceUri, 'lib');
+        await vscode.workspace.fs.createDirectory(libDir);
+
+        // Create .resources/ directory for board guides (as markdown)
+        const resourcesDir = vscode.Uri.joinPath(workspaceUri, '.resources');
+        await vscode.workspace.fs.createDirectory(resourcesDir);
+
+        // Create .libraries/ directory for user-modified libraries
+        const librariesDir = vscode.Uri.joinPath(workspaceUri, '.libraries');
+        await vscode.workspace.fs.createDirectory(librariesDir);
+
+        // Create .projects/ directory (hidden, moved from projects/)
+        const projectsDir = vscode.Uri.joinPath(workspaceUri, '.projects');
+        await vscode.workspace.fs.createDirectory(projectsDir);
+
+        // Create .projects/.current backup directory
+        const currentBackupDir = vscode.Uri.joinPath(projectsDir, '.current');
+        await vscode.workspace.fs.createDirectory(currentBackupDir);
+
+        this._logger.info('WORKSPACE', 'Created refined directory structure');
+    }
+
+    /**
+     * Create board guide as markdown with webpage preview functionality
+     */
+    private async createBoardGuideMarkdown(device: IDevice, workspaceUri: vscode.Uri): Promise<void> {
+        try {
+            const resourcesDir = vscode.Uri.joinPath(workspaceUri, '.resources');
+            const guideInfo = this._learnGuideProvider.getLearnGuideInfo(device as any);
+
+            if (guideInfo?.guide_url) {
+                // Fetch webpage content and convert to markdown
+                const markdownContent = await this.fetchAndConvertWebpageToMarkdown(
+                    guideInfo.guide_url,
+                    device.displayName
+                );
+
+                // Save as guide.md in .resources/
+                const guidePath = vscode.Uri.joinPath(resourcesDir, 'guide.md');
+                await vscode.workspace.fs.writeFile(
+                    guidePath,
+                    new TextEncoder().encode(markdownContent)
+                );
+
+                this._logger.info('WORKSPACE', `Created board guide markdown: ${guidePath.fsPath}`);
+            } else {
+                // Create placeholder guide
+                const placeholderContent = this.createPlaceholderGuide(device.displayName);
+                const guidePath = vscode.Uri.joinPath(resourcesDir, 'guide.md');
+                await vscode.workspace.fs.writeFile(
+                    guidePath,
+                    new TextEncoder().encode(placeholderContent)
+                );
+            }
+        } catch (error) {
+            this._logger.warn('WORKSPACE', `Failed to create board guide markdown: ${error}`);
+        }
+    }
+
+    /**
+     * Fetch webpage content and convert to markdown with "single page" view
+     */
+    private async fetchAndConvertWebpageToMarkdown(url: string, boardName: string): Promise<string> {
+        try {
+            // TODO: Implement webpage fetching and markdown conversion
+            // This should fetch the webpage, extract main content, and convert to markdown
+            // For now, return a placeholder that includes the URL
+            return `# ${boardName} Board Guide
+
+This guide is being fetched from: [${url}](${url})
+
+## Quick Start
+Connect your ${boardName} board and start coding!
+
+## Resources
+- [Full Board Guide](${url})
+- [CircuitPython Documentation](https://docs.circuitpython.org/)
+
+---
+*This guide will be enhanced with full webpage content conversion in a future update.*
+`;
+        } catch (error) {
+            this._logger.warn('WORKSPACE', `Failed to fetch webpage content: ${error}`);
+            return this.createPlaceholderGuide(boardName);
+        }
+    }
+
+    /**
+     * Create placeholder guide content
+     */
+    private createPlaceholderGuide(boardName: string): string {
+        return `# ${boardName} Board Guide
+
+## Getting Started
+Welcome to your ${boardName} CircuitPython project!
+
+## Quick Setup
+1. Connect your ${boardName} board
+2. Copy your code to \`code.py\`
+3. Add any needed libraries to the \`lib/\` folder
+4. Your board will automatically run the code!
+
+## Project Structure
+- \`code.py\` - Main entry point for your CircuitPython program
+- \`lib/\` - CircuitPython libraries for your project
+- \`.libraries/\` - Custom or modified libraries
+- \`.projects/\` - Saved project versions
+
+## Resources
+- [CircuitPython Documentation](https://docs.circuitpython.org/)
+- [Adafruit Learning System](https://learn.adafruit.com/)
+
+Happy coding!
+`;
+    }
+
+    /**
+     * Create refined device identification file structure
+     */
+    private async createDeviceIdentificationFile(
+        device: IDevice,
+        workspaceId: string,
+        workspaceName: string
+    ): Promise<void> {
+        try {
+            // Try to find the CIRCUITPY drive
+            const circuitPyPath = await this.findCircuitPyDrive(device);
+            if (!circuitPyPath) {
+                this._logger.warn('WORKSPACE', `Could not find CIRCUITPY drive for device ${device.displayName}`);
+                return;
+            }
+
+            this._logger.info('WORKSPACE', `Found CIRCUITPY drive at: ${circuitPyPath}`);
+
+            // Create .vscode directory on CIRCUITPY drive (refined structure)
+            const vscodeDir = vscode.Uri.file(`${circuitPyPath}/.vscode`);
+            await vscode.workspace.fs.createDirectory(vscodeDir);
+
+            // Create mu2-{id} identification file content
+            const mu2FileContent = {
+                version: "1.0.0",
+                created: new Date().toISOString(),
+                workspace_id: workspaceId,
+                workspace_name: workspaceName,
+                device_info: {
+                    board_name: device.displayName,
+                    vendor_id: device.vendorId,
+                    product_id: device.productId,
+                    serial_number: device.path
+                },
+                scheme: "mutwo", // Our custom scheme for identification
+                mu_two_session: true
+            };
+
+            // Write mu2-{id} file to CIRCUITPY/.vscode/ (refined structure)
+            const mu2FilePath = vscode.Uri.file(`${circuitPyPath}/.vscode/mu2-${workspaceId}`);
+            await vscode.workspace.fs.writeFile(
+                mu2FilePath,
+                new TextEncoder().encode(JSON.stringify(mu2FileContent, null, 2))
+            );
+
+            this._logger.info('WORKSPACE', `Created mu2-${workspaceId} identification file on CIRCUITPY drive`);
+
+            // Update the drive's scheme association (if supported by filesystem provider)
+            await this.updateDriveSchemeAssociation(circuitPyPath, workspaceId);
+
+        } catch (error) {
+            this._logger.error('WORKSPACE', `Failed to create device identification file: ${error}`);
+            // Don't throw - this is optional functionality
+        }
+    }
+
+    /**
+     * Find the CircuitPython drive for the given device (using configurable drive name)
+     */
+    private async findCircuitPyDrive(device: IDevice): Promise<string | null> {
+        try {
+            // Get user-configured drive name (defaults to "CIRCUITPY")
+            const config = vscode.workspace.getConfiguration('muTwo');
+            const driveName = config.get<string>('circuitPythonDriveName', 'CIRCUITPY');
+
+            // Build platform-specific search paths using configured drive name
+            const commonPaths = [
+                `D:/${driveName}`,   // Windows common drive letters
+                `E:/${driveName}`,
+                `F:/${driveName}`,
+                `G:/${driveName}`,
+                `/Volumes/${driveName}`,  // macOS
+                `/media/${driveName}`,    // Linux
+                `/mnt/${driveName}`       // Linux alternative
+            ];
+
+            this._logger.info('WORKSPACE', `Searching for CircuitPython drive named: ${driveName}`);
+
+            // Check each potential path
+            for (const path of commonPaths) {
+                try {
+                    const uri = vscode.Uri.file(path);
+                    const stat = await vscode.workspace.fs.stat(uri);
+                    if (stat.type === vscode.FileType.Directory) {
+                        this._logger.info('WORKSPACE', `Found CircuitPython drive at: ${path}`);
+                        return path;
+                    }
+                } catch {
+                    // Path doesn't exist, continue checking
+                }
+            }
+
+            // Try to use the device path if available and contains drive name
+            if (device.path && device.path.includes(driveName)) {
+                this._logger.info('WORKSPACE', `Using device path: ${device.path}`);
+                return device.path;
+            }
+
+            this._logger.warn('WORKSPACE', `No CircuitPython drive found with name: ${driveName}`);
+            return null;
+        } catch (error) {
+            this._logger.error('WORKSPACE', `Error finding CircuitPython drive: ${error}`);
+            return null;
+        }
+    }
+
+    /**
+     * Update the drive's scheme association for easier re-identification
+     */
+    private async updateDriveSchemeAssociation(
+        circuitPyPath: string,
+        workspaceId: string
+    ): Promise<void> {
+        try {
+            // Create a scheme-specific file that our extension can detect
+            const schemeFilePath = vscode.Uri.file(`${circuitPyPath}/.vscode-mutwo-${workspaceId}`);
+            const schemeContent = {
+                scheme: "mutwo",
+                workspace_id: workspaceId,
+                timestamp: new Date().toISOString()
+            };
+
+            await vscode.workspace.fs.writeFile(
+                schemeFilePath,
+                new TextEncoder().encode(JSON.stringify(schemeContent, null, 2))
+            );
+
+            this._logger.info('WORKSPACE', `Created scheme association file for workspace ${workspaceId}`);
+        } catch (error) {
+            this._logger.warn('WORKSPACE', `Could not create scheme association: ${error}`);
+        }
+    }
+
+    /**
+     * Read device identification from .mu2 file on CIRCUITPY drive
+     */
+    public async readDeviceIdentification(device: IDevice): Promise<{
+        workspaceId: string;
+        workspaceName: string;
+        scheme: string;
+    } | null> {
+        try {
+            const circuitPyPath = await this.findCircuitPyDrive(device);
+            if (!circuitPyPath) {
+                return null;
+            }
+
+            const mu2FilePath = vscode.Uri.file(`${circuitPyPath}/.mu2`);
+            const fileContent = await vscode.workspace.fs.readFile(mu2FilePath);
+            const mu2Data = JSON.parse(new TextDecoder().decode(fileContent));
+
+            this._logger.info('WORKSPACE', `Found .mu2 identification file for device ${device.displayName}`);
+            this._logger.info('WORKSPACE', `Device linked to workspace: ${mu2Data.workspace_name} (${mu2Data.workspace_id})`);
+
+            return {
+                workspaceId: mu2Data.workspace_id,
+                workspaceName: mu2Data.workspace_name,
+                scheme: mu2Data.scheme || 'mutwo'
+            };
+        } catch (error) {
+            this._logger.debug('WORKSPACE', `No .mu2 identification file found for device: ${error}`);
+            return null;
+        }
+    }
+
+    /**
+     * Check if a device has our scheme association files
+     */
+    public async hasSchemeAssociation(device: IDevice): Promise<boolean> {
+        try {
+            const circuitPyPath = await this.findCircuitPyDrive(device);
+            if (!circuitPyPath) {
+                return false;
+            }
+
+            // Check for any .vscode-mutwo-* files
+            const circuitPyUri = vscode.Uri.file(circuitPyPath);
+            const files = await vscode.workspace.fs.readDirectory(circuitPyUri);
+
+            return files.some(([name]) => name.startsWith('.vscode-mutwo-'));
+        } catch (error) {
+            this._logger.debug('WORKSPACE', `Error checking scheme association: ${error}`);
+            return false;
+        }
     }
 
     /**
