@@ -15,6 +15,7 @@ import { MuTwoFileSystemProvider } from '../workspace/filesystem/fileSystemProvi
 import { CtpyDeviceFileSystemProvider } from '../workspace/filesystem/ctpyDeviceFSProvider';
 import { MuTwoWorkspace } from '../workspace/workspace';
 import { ensureSimplePythonVenv, setPythonEnvironmentVariables } from '../utils/simpleVenv';
+import { LanguageOverrideManager } from '../services/languageOverrideManager';
 
 const logger = getLogger();
 
@@ -29,6 +30,7 @@ let deviceDetector: MuDeviceDetector;
 let pythonEnvManager: PythonEnvManager | null = null;
 let muTwoFileSystemProvider: MuTwoFileSystemProvider;
 let ctpyDeviceFileSystemProvider: CtpyDeviceFileSystemProvider;
+let languageOverrideManager: LanguageOverrideManager;
 
 /**
  * Initialize core infrastructure
@@ -77,6 +79,7 @@ export async function initializeEssentialServices(
 	deviceDetector: MuDeviceDetector | null
 	muTwoFileSystemProvider: MuTwoFileSystemProvider
 	ctpyDeviceFileSystemProvider: CtpyDeviceFileSystemProvider
+	languageOverrideManager: LanguageOverrideManager
 }> {
 	logger.info('ACTIVATION', 'Initializing essential services...')
 
@@ -96,6 +99,10 @@ export async function initializeEssentialServices(
 	// Initialize simple commands
 	simpleCommands = new SimpleCommands(context, simpleDeviceDetector);
 	simpleCommands.registerCommands();
+
+	// Initialize language override manager for CircuitPython workspace detection
+	languageOverrideManager = new LanguageOverrideManager(context);
+	logger.info('ACTIVATION', '✅ Language override manager initialized');
 
 	// Initialize Python environment manager (simplified - detects existing venv)
 	pythonEnvManager = await initializePythonEnvironment(
@@ -139,7 +146,8 @@ export async function initializeEssentialServices(
 		languageClient,
 		deviceDetector,
 		muTwoFileSystemProvider,
-		ctpyDeviceFileSystemProvider
+		ctpyDeviceFileSystemProvider,
+		languageOverrideManager
 	}
 }
 

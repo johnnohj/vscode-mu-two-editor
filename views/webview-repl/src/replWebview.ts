@@ -144,7 +144,10 @@ class CommandTerminal {
 			blinkaGlyphAvailable: false,
 			fontLoaded: false,
 			// PTY Bridge state
-			ptyMode: false
+			ptyMode: false,
+			// Prompt deduplication
+			lastPromptTime: 0,
+			promptShown: false
 		};
 
 		this.init();
@@ -438,7 +441,15 @@ class CommandTerminal {
 				if (message.data.sessionContent) {
 					this.restoreSession(message.data.sessionContent);
 				} else {
-					this.showPrompt();
+					// Check if this is initial state setup from webviewPanelProvider
+					if (message.data.initialState && message.data.replState) {
+						// Force the state transition and show one prompt
+						this.state.replState = message.data.replState;
+						this.showPrompt();
+					} else if (this.state.replState === 'idle') {
+						// Normal session restore - only show prompt if already in idle state
+						this.showPrompt();
+					}
 				}
 				// Sync terminal content after session restore
 				setTimeout(() => this.syncTerminalContent(), 50);
@@ -553,7 +564,7 @@ class CommandTerminal {
 					this.state.replState = 'idle';
 					this.terminal?.clear(); // Clear the waiting message
 					this.writeOutput('✅ Python virtual environment ready!\r\n');
-					this.showPrompt(); // Show the normal prompt
+					// Don't show prompt here - wait for sessionRestore to avoid duplicates
 				}
 				break;
 
@@ -947,7 +958,7 @@ Each mode gets its own independent session - perfect for running multiple operat
 				// Show empty input
 				this.state.currentInput = '';
 				// Show prompt and position cursor properly
-				const prompt = this.state.connected ? '>>> ' : 'mu2> ';
+				const prompt = '>>> ';
 				const colorizedPrompt = `\x1b[38;2;210;117;55m${prompt}\x1b[0m`;
 				this.terminal.write(colorizedPrompt);
 			} else {
@@ -955,7 +966,7 @@ Each mode gets its own independent session - perfect for running multiple operat
 				const command = this.state.commandHistory[this.state.commandHistory.length - 1 - newIndex];
 				this.state.currentInput = command;
 				// Show prompt and command, cursor will be positioned after the command
-				const prompt = this.state.connected ? '>>> ' : 'mu2> ';
+				const prompt = '>>> ';
 				const colorizedPrompt = `\x1b[38;2;210;117;55m${prompt}\x1b[0m`;
 				this.terminal.write(colorizedPrompt + command);
 			}
@@ -999,6 +1010,20 @@ Each mode gets its own independent session - perfect for running multiple operat
 
 	showPrompt() {
 		if (!this.terminal) return;
+
+		// Deduplicate rapid calls within 500ms to prevent double prompts
+		const now = Date.now();
+		if (now - this.state.lastPromptTime < 500) {
+			console.log('🔍 showPrompt() called but skipped due to recent call within 500ms');
+			return;
+		}
+
+		// Debug logging to track prompt calls
+		const stackTrace = new Error().stack;
+		console.log('🔍 showPrompt() called. Stack:', stackTrace);
+
+		this.state.lastPromptTime = now;
+		this.state.promptShown = true;
 
 		const prompt = this.getPromptForCurrentRuntime();
 
@@ -1096,12 +1121,8 @@ Both are connected to the same unified REPL backend!
 				break;
 		}
 
-		// Unified prompt based on device connection
-		if (this.state.deviceConnected) {
-			return `>>> `; // Device connected - CircuitPython REPL
-		} else {
-			return `mu2> `; // Shell mode - pip, circup, etc.
-		}
+		// Always use >>> prompt as requested by user
+		return '>>> ';
 	}
 
 	private updatePromptForRuntime(): void {

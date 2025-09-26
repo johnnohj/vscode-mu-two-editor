@@ -9,6 +9,7 @@ import { LanguageServiceBridge } from '../language/core/LanguageServiceBridge';
 import { WasmRuntimeManager, WasmExecutionResult } from '../../runtime/wasm/wasmRuntimeManager';
 import { getLogger } from '../../utils/unifiedLogger';
 import { UnifiedReplPty } from '../terminal/unifiedReplPty';
+import { ReplCoordinator } from '../../services/replCoordinator';
 // Removed over-engineered components - using direct imports where needed
 
 /**
@@ -160,6 +161,10 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 		// Set up webview content based on connection status
 		await this.updateWebviewContent();
 
+		// Register main REPL with coordinator for data sharing
+		const coordinator = ReplCoordinator.getInstance(this.extensionContext);
+		coordinator.registerMainRepl(webviewView);
+
 		// Connect webview to CircuitPython language service for completions
 		// Temporarily disabled due to MODULE_NOT_FOUND error
 		this.logger.info('EXTENSION', 'REPL: Language service bridge connection skipped (temporarily disabled)');
@@ -172,7 +177,7 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 		// Set up basic message handling
 		this.setupMessageHandling(webviewView);
 
-		this.logger.info('EXTENSION', 'REPL View Provider resolved successfully');
+		this.logger.info('EXTENSION', 'REPL View Provider resolved successfully with data coordination');
 	}
 
 	/**
@@ -328,6 +333,15 @@ export class ReplViewProvider implements vscode.WebviewViewProvider {
 				if (this.unifiedReplPty && data.data?.input !== undefined) {
 					this.unifiedReplPty.handleInput(data.data.input);
 				}
+				break;
+
+			// Data coordination messages - handled by ReplCoordinator
+			case 'dataPublish':
+			case 'dataRequest':
+			case 'sensorDataStream':
+			case 'hardwareSimulation':
+				this.logger.info('EXTENSION', `REPL: Data coordination message: ${data.type}`);
+				// ReplCoordinator handles these via its message subscription
 				break;
 
 			default:

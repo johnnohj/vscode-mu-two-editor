@@ -20,7 +20,7 @@
 		"Other"
 	],
 	"extensionDependencies": [
-
+		"ms-python.python"
 	],
 	"optionalExtensionDependencies": [
 		"ms-vscode.vscode-serial-monitor"
@@ -124,10 +124,6 @@
 				{
 					"command": "muTwo.editor.showPanel",
 					"when": "muTwo.editor.navIcon == true && muTwo.editor.panelCollapsed == true"
-				},
-				{
-					"command": "muTwo.editor.hidePanel",
-					"when": "muTwo.editor.navIcon == true && muTwo.editor.panelCollapsed != true"
 				}
 			],
 			"view/title": []
