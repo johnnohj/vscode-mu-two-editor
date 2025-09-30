@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 import { getLogger } from '../utils/unifiedLogger';
+import { getResourceLocator } from '../core/resourceLocator';
+import { getDevLogger } from '../utils/devLogger';
+import { withProgress } from '../utils/progressHelper';
 import { CircuitPythonBundleManager } from '../workspace/integration/bundleManager';
 
 const logger = getLogger();
@@ -48,35 +51,45 @@ export class PythonEnvManager {
 	 * Does NOT create environments - that's handled by MuTwoTerminalProfile
 	 */
 	async initialize(): Promise<void> {
+		const devLogger = getDevLogger();
+
 		try {
-			logger.info('PYTHON_ENV', 'Detecting existing Python environment...');
+			await withProgress('Detecting Python Environment', async (progress) => {
+				devLogger.python('Detecting existing Python environment...');
+				progress.report({ message: 'Scanning for Python installations' });
 
-			// Try to detect environment in standard locations
-			const detectedPath = await this.detectExistingEnvironment();
+				// Try to detect environment in standard locations
+				const detectedPath = await this.detectExistingEnvironment();
 
-			if (detectedPath && await this.validateEnvironment(detectedPath)) {
-				this.muTwoEnvPath = detectedPath;
-				await this.context.globalState.update('muTwo.pythonEnvPath', detectedPath);
-				logger.info('PYTHON_ENV', `Valid Python environment detected: ${detectedPath}`);
+				if (detectedPath && await this.validateEnvironment(detectedPath)) {
+					progress.report({ message: 'Validating environment', increment: 40 });
 
-				// Configure VS Code Python extension to use detected environment
-				if (vscode.workspace.workspaceFolders) {
-					await this.configureVSCodePythonExtension();
+					this.muTwoEnvPath = detectedPath;
+					await this.context.globalState.update('muTwo.pythonEnvPath', detectedPath);
+					devLogger.python(`Valid Python environment detected: ${detectedPath}`);
+
+					// Configure VS Code Python extension to use detected environment
+					if (vscode.workspace.workspaceFolders) {
+						progress.report({ message: 'Configuring VS Code integration', increment: 30 });
+						await this.configureVSCodePythonExtension();
+					}
+
+					// Optional: Verify expected packages are present (info only)
+					progress.report({ message: 'Checking installed packages', increment: 20 });
+					await this.reportPackageStatus();
+
+					// Initialize and verify CircuitPython bundle
+					progress.report({ message: 'Initializing bundle manager', increment: 10 });
+					await this.initializeBundleManager();
+
+				} else {
+					devLogger.python('No valid Python environment detected. Extension will run with limited Python features.');
+					this.muTwoEnvPath = undefined;
 				}
-
-				// Optional: Verify expected packages are present (info only)
-				await this.reportPackageStatus();
-
-				// Initialize and verify CircuitPython bundle
-				await this.initializeBundleManager();
-
-			} else {
-				logger.warn('PYTHON_ENV', 'No valid Python environment detected. Extension will run with limited Python features.');
-				this.muTwoEnvPath = undefined;
-			}
+			});
 
 		} catch (error) {
-			logger.error('PYTHON_ENV', `Python environment detection failed: ${error instanceof Error ? error.message : error}`);
+			devLogger.error('PYTHON', `Python environment detection failed`, error);
 			// Don't throw - extension should continue without Python features
 			this.muTwoEnvPath = undefined;
 		}
@@ -134,9 +147,9 @@ export class PythonEnvManager {
 		}
 
 		// Check standard locations where MuTwoTerminalProfile creates venvs
+		const resourceLocator = getResourceLocator();
 		const standardPaths = [
-			vscode.Uri.joinPath(this.context.extensionUri, 'venv').fsPath,
-
+			resourceLocator.getVenvPath().fsPath,
 		];
 
 		for (const envPath of standardPaths) {

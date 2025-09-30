@@ -6,6 +6,7 @@ import { IDevice } from '../../devices/core/deviceDetector';
 import { getNonce } from '../../utils/webview';
 import { LanguageServiceBridge } from '../language/core/LanguageServiceBridge';
 import { getLogger } from '../../utils/unifiedLogger';
+import { getResourceLocator } from '../../core/resourceLocator';
 
 import { BoardDetectionHelper } from '../helpers/boardDetectionHelper';
 import { ReplSessionHelper } from '../helpers/replSessionHelper';
@@ -170,7 +171,8 @@ export class EditorReplPanelProvider {
 			);
 
 			// Set the icon for the panel tab
-			panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'Mu2NoCirc-Red.svg');
+			const resourceLocator = getResourceLocator();
+			panel.iconPath = resourceLocator.getIconPath('Mu2NoCirc-Red.svg');
 
 			// Set up panel focus tracking for context variables
 			panel.onDidChangeViewState((e) => {
@@ -357,7 +359,8 @@ export class EditorReplPanelProvider {
 			}
 		);
 
-		panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'Mu2NoCirc-Red.svg');
+		const resourceLocator = getResourceLocator();
+		panel.iconPath = resourceLocator.getIconPath('Mu2NoCirc-Red.svg');
 
 		// Set up panel focus tracking for context variables
 		panel.onDidChangeViewState((e) => {
@@ -413,7 +416,8 @@ export class EditorReplPanelProvider {
 			}
 		);
 
-		panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'Mu2NoCirc-Red.svg');
+		const resourceLocator = getResourceLocator();
+		panel.iconPath = resourceLocator.getIconPath('Mu2NoCirc-Red.svg');
 
 		// Set up panel focus tracking for context variables
 		panel.onDidChangeViewState((e) => {

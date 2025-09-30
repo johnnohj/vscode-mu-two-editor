@@ -13,6 +13,7 @@ import * as vscode from 'vscode';
 // import * as path from 'path'; // Migrated to VS Code URI-based path handling
 import { IPythonRuntime, RuntimeModule, PythonRuntimeType } from '../engines/IPythonRuntime';
 import { getTaskRunner } from '../../workspace/filesystem/taskRunner';
+import { getResourceLocator } from '../../core/resourceLocator';
 
 export interface LibraryInfo {
     name: string;
@@ -55,7 +56,8 @@ export class AdafruitBundleManager extends EventEmitter {
         private bundleBasePath?: string
     ) {
         super();
-        this._bundlePath = bundleBasePath || vscode.Uri.joinPath(context.globalStorageUri, 'adafruit-bundle').fsPath;
+        const resourceLocator = getResourceLocator();
+        this._bundlePath = bundleBasePath || vscode.Uri.joinPath(resourceLocator.getGlobalStorageUri(), 'adafruit-bundle').fsPath;
     }
 
     static getInstance(context?: vscode.ExtensionContext): AdafruitBundleManager {

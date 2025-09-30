@@ -3,9 +3,11 @@
 
 import * as vscode from 'vscode';
 import { getLogger } from '../utils/unifiedLogger';
-import { ExtensionStateManager } from '../utils/extensionStateManager';
+import { ComponentRegistry } from './componentRegistry';
 import { BoardManager, IBoard } from '../devices/management/boardManager';
 import { PythonEnvManager } from '../execution/pythonEnvManager';
+import { getDevLogger } from '../utils/devLogger';
+import { getDeviceRegistry } from '../devices/core/deviceRegistry';
 import {
     getWorkspaceManager,
     getProjectManager,
@@ -36,6 +38,7 @@ export function registerCommands(
     registerProjectsViewCommands(context);
     registerLibraryManagerCommands(context);
     registerPythonCommands(context);
+    registerDevCommands(context);
     // registerCLICommands removed - CLI processor no longer exists
     registerDebugCommands(context);
 
@@ -527,6 +530,77 @@ function registerPythonCommands(context: vscode.ExtensionContext): void {
 /**
  * Register debug commands
  */
+/**
+ * Register development commands
+ */
+function registerDevCommands(context: vscode.ExtensionContext): void {
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.dev.openLogFile', async () => {
+            try {
+                const devLogger = getDevLogger();
+                await devLogger.openLogFile();
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to open log file: ${error}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('muTwo.dev.revealLogFile', async () => {
+            try {
+                const devLogger = getDevLogger();
+                await devLogger.revealLogFile();
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to reveal log file: ${error}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('muTwo.dev.showOutputChannel', () => {
+            try {
+                const devLogger = getDevLogger();
+                devLogger.show();
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to show output channel: ${error}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('muTwo.dev.listDevices', async () => {
+            try {
+                const deviceRegistry = getDeviceRegistry();
+                const devices = deviceRegistry.getAllDevices();
+                const cpDevices = deviceRegistry.getCircuitPythonDevices();
+
+                const message = devices.length === 0
+                    ? 'No devices detected'
+                    : `Found ${devices.length} device(s), ${cpDevices.length} CircuitPython:\n\n` +
+                      devices.map(d =>
+                          `${d.isCircuitPython ? '✓' : ' '} ${d.displayName}\n` +
+                          `  Path: ${d.path}\n` +
+                          `  VID:PID: ${d.vendorId}:${d.productId}\n` +
+                          `  Confidence: ${d.confidence}`
+                      ).join('\n\n');
+
+                await vscode.window.showInformationMessage(
+                    message,
+                    { modal: true }
+                );
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to list devices: ${error}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('muTwo.dev.refreshDevices', async () => {
+            try {
+                const deviceRegistry = getDeviceRegistry();
+                const devices = await deviceRegistry.refresh();
+                vscode.window.showInformationMessage(
+                    `Refreshed: Found ${devices.length} device(s)`
+                );
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to refresh devices: ${error}`);
+            }
+        })
+    );
+}
+
 function registerDebugCommands(context: vscode.ExtensionContext): void {
     // Debug command to check context values
     context.subscriptions.push(
@@ -831,10 +905,10 @@ async function listProjectsCommand(context: vscode.ExtensionContext): Promise<vo
 
 async function setupPythonEnvironmentCommand(context: vscode.ExtensionContext): Promise<void> {
     try {
-        const stateManager = ExtensionStateManager.getInstance(context);
+        const componentRegistry = ComponentRegistry.getInstance(context);
 
         // Check if already in progress
-        if (stateManager.tryGetComponent('pythonEnvManager')) {
+        if (componentRegistry.tryGetComponent('pythonEnvManager')) {
             vscode.window.showInformationMessage('Python environment setup is already in progress or completed.');
             return;
         }
@@ -848,8 +922,8 @@ async function setupPythonEnvironmentCommand(context: vscode.ExtensionContext): 
         // Mark venv as successfully activated
         const venvPath = newPythonEnvManager.getCurrentPythonPath();
         if (venvPath) {
-            stateManager.setPythonVenvActivated(venvPath);
-            stateManager.setComponent('pythonEnvManager', newPythonEnvManager);
+            componentRegistry.setPythonVenvActivated(venvPath);
+            componentRegistry.register('pythonEnvManager', newPythonEnvManager);
 
             vscode.window.showInformationMessage('Mu 2 Python environment setup completed successfully!');
         } else {
@@ -857,9 +931,9 @@ async function setupPythonEnvironmentCommand(context: vscode.ExtensionContext): 
         }
 
     } catch (error) {
-        const stateManager = ExtensionStateManager.getInstance(context);
+        const componentRegistry = ComponentRegistry.getInstance(context);
         const errorMessage = error instanceof Error ? error.message : String(error);
-        stateManager.setPythonVenvFailed(errorMessage);
+        componentRegistry.setPythonVenvFailed(errorMessage);
 
         vscode.window.showErrorMessage(
             `Failed to setup Python environment: ${errorMessage}`,

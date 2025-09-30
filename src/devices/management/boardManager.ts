@@ -6,8 +6,10 @@ import { DeviceManager } from '../core/deviceManager';
 import { MuTwoLanguageClient } from '../core/client';
 import { CtpyDeviceFileSystemProvider } from '../../workspace/filesystem/ctpyDeviceFSProvider'
 import { MuDeviceDetector, IDevice, MuDevice } from '../core/deviceDetector';
+import { getDeviceRegistry, RegisteredDevice } from '../core/deviceRegistry';
 // import { BoardFactory } from '../../utils/usbBoard'; // Circular dependency - temporarily commented out
 import { getLogger } from '../../utils/unifiedLogger';
+import { getDevLogger } from '../../utils/devLogger';
 
 export type BoardType = 'usb' | 'ble' | 'virtual';
 
@@ -372,10 +374,10 @@ export class BoardManager {
 		private context: vscode.ExtensionContext,
 		private deviceManager: DeviceManager,
 		private languageClient: MuTwoLanguageClient,
-		private fileSystemProvider: CtpyDeviceFileSystemProvider,
-		private deviceDetector: MuDeviceDetector
+		private fileSystemProvider: CtpyDeviceFileSystemProvider
 	) {
 		// Using unified logger instead of separate output channel
+		// Phase 2: DeviceRegistry replaces deviceDetector parameter
 		this.loadWorkspaceBoardMappings()
 	}
 
@@ -420,41 +422,47 @@ export class BoardManager {
 
 	/**
 	 * Primary device detection - replaces the old scattered detection logic
-	 * Now creates enhanced USB boards with CircuitPython REPL JS integration
+	 * Now uses DeviceRegistry for single source of truth
 	 */
 	public async refreshDevices(): Promise<void> {
 		try {
-			const detectionResult = await this.deviceDetector.detectDevices()
+			const devLogger = getDevLogger();
+			const deviceRegistry = getDeviceRegistry();
+
+			// Get CircuitPython devices from registry
+			const devices = deviceRegistry.getCircuitPythonDevices();
+			devLogger.board(`Refreshing boards: found ${devices.length} CircuitPython devices`);
 
 			// Remove boards that are no longer detected
-			const currentBoardIds = new Set(this.boards.keys())
-			const detectedBoardIds = new Set()
+			const currentBoardIds = new Set(this.boards.keys());
+			const detectedBoardIds = new Set<string>();
 
 			// Create/update enhanced boards from detected devices
-			for (const device of detectionResult.devices) {
-				const boardId =
-					device.boardId ||
-					`usb-${device.path.replace(/[^a-zA-Z0-9]/g, '-')}`
-				detectedBoardIds.add(boardId)
+			for (const device of devices) {
+				const boardId = device.boardId ||
+					`usb-${device.path.replace(/[^a-zA-Z0-9]/g, '-')}`;
+				detectedBoardIds.add(boardId);
 
 				if (!this.boards.has(boardId)) {
 					// Import the enhanced board factory
-					const { BoardFactory } = await import('../../utils/usbBoard')
+					const { BoardFactory } = await import('../../utils/usbBoard');
 
 					const board = BoardFactory.createUsbBoard({
 						path: device.path,
 						boardId: device.boardId,
 						displayName: device.displayName,
-					})
+					});
 
-					this.addBoard(board)
+					this.addBoard(board);
+					devLogger.board(`Added board: ${device.displayName} (${boardId})`);
 				}
 			}
 
 			// Remove boards that are no longer detected
 			for (const boardId of currentBoardIds) {
 				if (!detectedBoardIds.has(boardId)) {
-					this.removeBoard(boardId)
+					devLogger.board(`Removing board: ${boardId}`);
+					this.removeBoard(boardId);
 				}
 			}
 		} catch (error) {
@@ -489,80 +497,38 @@ export class BoardManager {
 
 	/**
 	 * Detect available CircuitPython devices - core "phone directory" function
+	 * Now uses DeviceRegistry
 	 */
 	public async detectDevices(): Promise<void> {
 		try {
-			this._logger.info(
-				'BOARD_MANAGER',
-				'Detecting CircuitPython devices...'
-			)
+			const devLogger = getDevLogger();
+			const deviceRegistry = getDeviceRegistry();
 
-			const result = await this.deviceDetector.detectDevices()
+			devLogger.board('Detecting CircuitPython devices...');
 
-			this._logger.info('BOARD_MANAGER', '\nDetection Results:')
-			this._logger.info(
-				'BOARD_MANAGER',
-				`- Total serial devices: ${result.totalDevices}`
-			)
-			this._logger.info(
-				'BOARD_MANAGER',
-				`- CircuitPython devices: ${result.circuitPythonDevices}`
-			)
+			// Refresh device registry
+			const allDevices = await deviceRegistry.refresh();
+			const cpDevices = deviceRegistry.getCircuitPythonDevices();
 
-			if (result.devices.length > 0) {
-				this._logger.info('BOARD_MANAGER', '\nFound CircuitPython devices:')
-				for (let i = 0; i < result.devices.length; i++) {
-					const device = result.devices[i]
-					this._logger.info(
-						'BOARD_MANAGER',
-						`${i + 1}. ${device.displayName}`
-					)
-					this._logger.info('BOARD_MANAGER', `   Path: ${device.path}`)
-					this._logger.info(
-						'BOARD_MANAGER',
-						`   Confidence: ${device.confidence}`
-					)
+			devLogger.board('Detection Results:');
+			devLogger.board(`- Total serial devices: ${allDevices.length}`);
+			devLogger.board(`- CircuitPython devices: ${cpDevices.length}`);
+
+			if (cpDevices.length > 0) {
+				devLogger.board('\nFound CircuitPython devices:');
+				for (let i = 0; i < cpDevices.length; i++) {
+					const device = cpDevices[i];
+					devLogger.board(`${i + 1}. ${device.displayName}`);
+					devLogger.board(`   Path: ${device.path}`);
+					devLogger.board(`   Confidence: ${device.confidence}`);
 					if (device.boardId) {
-						this._logger.info(
-							'BOARD_MANAGER',
-							`   Board: ${device.boardId}`
-						)
-					}
-					if (device.hasConflict) {
-						this._logger.warn(
-							'BOARD_MANAGER',
-							`   ⚠️  Has VID:PID conflicts`
-						)
+						devLogger.board(`   Board: ${device.boardId}`);
 					}
 				}
 			}
 
-			if (result.conflicts.length > 0) {
-				this._logger.warn('BOARD_MANAGER', '\nVID:PID Conflicts detected:')
-				result.conflicts.forEach((conflict, i) => {
-					this._logger.warn(
-						'BOARD_MANAGER',
-						`${i + 1}. ${
-							conflict.vidPid
-						} - Possible boards: ${conflict.conflictingBoards.join(', ')}`
-					)
-				})
-			}
-
-			const stats = this.deviceDetector.getDatabaseStats()
-			this._logger.info('BOARD_MANAGER', '\nDatabase Statistics:')
-			this._logger.info(
-				'BOARD_MANAGER',
-				`- Total boards in database: ${stats.totalBoards}`
-			)
-			this._logger.info(
-				'BOARD_MANAGER',
-				`- Boards with USB config: ${stats.boardsWithUsb}`
-			)
-			this._logger.info(
-				'BOARD_MANAGER',
-				`- Known VID:PID combinations: ${stats.uniqueVidPids}`
-			)
+			// Note: DeviceRegistry doesn't track database stats like MuDeviceDetector did
+			// This information is less critical now that we have centralized detection
 
 			// Update our board registry
 			await this.refreshDevices()
@@ -647,34 +613,46 @@ export class BoardManager {
 
 	/**
 	 * Get device detection results for integration
+	 * Now uses DeviceRegistry
 	 */
-	public async getDetectedDevices() {
-		return await this.deviceDetector.detectDevices()
+	public async getDetectedDevices(): Promise<RegisteredDevice[]> {
+		const deviceRegistry = getDeviceRegistry();
+		return deviceRegistry.getCircuitPythonDevices();
 	}
 
 	/**
 	 * Get the best available device from detector
+	 * Now uses DeviceRegistry - returns first CircuitPython device
 	 */
-	public async getBestDevice() {
-		return await this.deviceDetector.getBestDevice()
+	public async getBestDevice(): Promise<RegisteredDevice | undefined> {
+		const deviceRegistry = getDeviceRegistry();
+		const devices = deviceRegistry.getCircuitPythonDevices();
+		// Return highest confidence device
+		return devices.sort((a, b) => {
+			const confidenceOrder = { high: 3, medium: 2, low: 1 };
+			return confidenceOrder[b.confidence] - confidenceOrder[a.confidence];
+		})[0];
 	}
 
 	/**
 	 * Get device by path lookup
+	 * Now uses DeviceRegistry
 	 */
-	public async getDeviceByPath(path: string): Promise<MuDevice | undefined> {
-		const result = await this.deviceDetector.detectDevices()
-		return result.devices.find((device) => device.path === path)
+	public async getDeviceByPath(path: string): Promise<RegisteredDevice | undefined> {
+		const deviceRegistry = getDeviceRegistry();
+		return deviceRegistry.getDeviceByPath(path);
 	}
 
 	/**
 	 * Find device by board ID lookup
+	 * Now uses DeviceRegistry
 	 */
 	public async getDeviceByBoardId(
 		boardId: string
-	): Promise<MuDevice | undefined> {
-		const result = await this.deviceDetector.detectDevices()
-		return result.devices.find((device) => device.boardId === boardId)
+	): Promise<RegisteredDevice | undefined> {
+		const deviceRegistry = getDeviceRegistry();
+		const devices = deviceRegistry.getCircuitPythonDevices();
+		return devices.find((device) => device.boardId === boardId);
 	}
 
 	/**
@@ -683,17 +661,11 @@ export class BoardManager {
 	public getBoardByDevicePath(devicePath: string): IBoard | undefined {
 		return this.getAllBoards().find((board) => {
 			// Access the deviceInfo through the board's connection state
-			const state = board.connectionState
-			return state.deviceInfo?.path === devicePath
-		})
+			const state = board.connectionState;
+			return state.deviceInfo?.path === devicePath;
+		});
 	}
 
-	/**
-	 * Get device detector instance
-	 */
-	public getDeviceDetector(): MuDeviceDetector {
-		return this.deviceDetector
-	}
 
 	// === Workspace Integration Methods ===
 

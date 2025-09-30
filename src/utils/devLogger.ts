@@ -13,6 +13,7 @@
  */
 
 import * as vscode from 'vscode';
+import { getResourceLocator } from '../core/resourceLocator';
 
 /**
  * Log component types - matches extension architecture
@@ -119,6 +120,7 @@ interface DevLoggerConfig {
   useColors: boolean;
   includeTimestamp: boolean;
   includeStackTrace: boolean; // For errors
+  writeToFile: boolean; // Write logs to file
 }
 
 /**
@@ -130,20 +132,130 @@ interface DevLoggerConfig {
 export class DevLogger {
   private outputChannel: vscode.OutputChannel;
   private config: DevLoggerConfig;
+  private logFileUri?: vscode.Uri;
+  private sessionStartTime: Date;
 
   constructor(
     outputChannel: vscode.OutputChannel,
+    logFileUri?: vscode.Uri,
     config?: Partial<DevLoggerConfig>
   ) {
     this.outputChannel = outputChannel;
+    this.logFileUri = logFileUri;
+    this.sessionStartTime = new Date();
     this.config = {
       minLevel: LogLevel.DEBUG,
       enabledComponents: 'all',
       useColors: true,
       includeTimestamp: true,
       includeStackTrace: true,
+      writeToFile: true,
       ...config
     };
+
+    // Write session header to log file
+    if (this.logFileUri && this.config.writeToFile) {
+      this.writeSessionHeader();
+    }
+  }
+
+  /**
+   * Write session header to log file
+   */
+  private async writeSessionHeader(): Promise<void> {
+    if (!this.logFileUri) return;
+
+    const header = [
+      '='.repeat(80),
+      `Mu 2 Editor Extension - Development Log`,
+      `Session Start: ${this.sessionStartTime.toISOString()}`,
+      `Platform: ${process.platform}`,
+      `VS Code: ${vscode.version}`,
+      '='.repeat(80),
+      ''
+    ].join('\n');
+
+    try {
+      // Append to existing log file
+      const encoder = new TextEncoder();
+      await vscode.workspace.fs.writeFile(
+        this.logFileUri,
+        encoder.encode(header)
+      );
+    } catch (error) {
+      // Silently fail if can't write to file
+      console.error('Failed to write log file header:', error);
+    }
+  }
+
+  /**
+   * Write log entry to file
+   */
+  private async writeToLogFile(plainText: string): Promise<void> {
+    if (!this.logFileUri || !this.config.writeToFile) return;
+
+    try {
+      const encoder = new TextEncoder();
+      const existing = await vscode.workspace.fs.readFile(this.logFileUri);
+      const newContent = new Uint8Array(existing.length + encoder.encode(plainText + '\n').length);
+      newContent.set(existing);
+      newContent.set(encoder.encode(plainText + '\n'), existing.length);
+      await vscode.workspace.fs.writeFile(this.logFileUri, newContent);
+    } catch (error) {
+      // If file doesn't exist, create it
+      try {
+        const encoder = new TextEncoder();
+        await vscode.workspace.fs.writeFile(
+          this.logFileUri,
+          encoder.encode(plainText + '\n')
+        );
+      } catch (writeError) {
+        // Silently fail if can't write
+        console.error('Failed to write to log file:', writeError);
+      }
+    }
+  }
+
+  /**
+   * Get log file path for reading
+   */
+  getLogFilePath(): vscode.Uri | undefined {
+    return this.logFileUri;
+  }
+
+  /**
+   * Open log file in editor
+   */
+  async openLogFile(): Promise<void> {
+    if (!this.logFileUri) {
+      vscode.window.showWarningMessage('Log file not configured');
+      return;
+    }
+
+    try {
+      // Ensure log file exists
+      await vscode.workspace.fs.stat(this.logFileUri);
+      const doc = await vscode.workspace.openTextDocument(this.logFileUri);
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to open log file: ${error}`);
+    }
+  }
+
+  /**
+   * Reveal log file in file explorer
+   */
+  async revealLogFile(): Promise<void> {
+    if (!this.logFileUri) {
+      vscode.window.showWarningMessage('Log file not configured');
+      return;
+    }
+
+    try {
+      await vscode.commands.executeCommand('revealFileInOS', this.logFileUri);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to reveal log file: ${error}`);
+    }
   }
 
   /**
@@ -257,6 +369,53 @@ export class DevLogger {
   }
 
   /**
+   * Format log message without colors (for file output)
+   */
+  private formatPlain(
+    level: LogLevel,
+    component: LogComponent,
+    message: string,
+    data?: any
+  ): string {
+    // Check if component is enabled
+    if (!this.isComponentEnabled(component)) {
+      return '';
+    }
+
+    // Check if level is enabled
+    if (level < this.config.minLevel) {
+      return '';
+    }
+
+    const parts: string[] = [];
+
+    // Timestamp
+    if (this.config.includeTimestamp) {
+      const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+      parts.push(`[${timestamp}]`);
+    }
+
+    // Level
+    parts.push(LEVEL_PREFIX[level]);
+
+    // Component
+    parts.push(`[${component}]`);
+
+    // Message
+    parts.push(message);
+
+    // Data (if provided)
+    if (data !== undefined) {
+      const dataStr = typeof data === 'string'
+        ? data
+        : JSON.stringify(data, null, 2);
+      parts.push(dataStr);
+    }
+
+    return parts.join(' ');
+  }
+
+  /**
    * Log a message
    */
   private log(
@@ -268,6 +427,15 @@ export class DevLogger {
     const formatted = this.format(level, component, message, data);
     if (formatted) {
       this.outputChannel.appendLine(formatted);
+
+      // Also write to log file if enabled
+      if (this.config.writeToFile && this.logFileUri) {
+        const plainText = this.formatPlain(level, component, message, data);
+        if (plainText) {
+          // Use void to ignore promise (async write, don't block)
+          void this.writeToLogFile(plainText);
+        }
+      }
     }
   }
 
@@ -381,19 +549,26 @@ let devLogger: DevLogger | undefined;
 export function initDevLogger(context: vscode.ExtensionContext): DevLogger {
   const outputChannel = vscode.window.createOutputChannel('Mu Two (Dev)', { log: true });
 
+  // Create log file path in global storage
+  const logFileName = `mu2-dev-${new Date().toISOString().split('T')[0]}.log`;
+  const resourceLocator = getResourceLocator();
+  const logFileUri = vscode.Uri.joinPath(resourceLocator.getGlobalStorageUri(), 'logs', logFileName);
+
   // Get configuration from VS Code settings
   const config = vscode.workspace.getConfiguration('muTwo.dev');
   const minLevel = config.get<string>('logLevel', 'DEBUG');
   const enabledComponents = config.get<string[]>('enabledComponents', []);
+  const writeToFile = config.get<boolean>('writeToFile', true);
 
-  devLogger = new DevLogger(outputChannel, {
+  devLogger = new DevLogger(outputChannel, logFileUri, {
     minLevel: LogLevel[minLevel as keyof typeof LogLevel] || LogLevel.DEBUG,
     enabledComponents: enabledComponents.length > 0
       ? new Set(enabledComponents as LogComponent[])
       : 'all',
     useColors: true,
     includeTimestamp: true,
-    includeStackTrace: true
+    includeStackTrace: true,
+    writeToFile
   });
 
   context.subscriptions.push(outputChannel);

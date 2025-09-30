@@ -421,6 +421,31 @@
 				"title": "Test Webview Panel Creation"
 			},
 			{
+				"command": "muTwo.dev.openLogFile",
+				"category": "Mu 2 Dev",
+				"title": "Open Development Log File"
+			},
+			{
+				"command": "muTwo.dev.revealLogFile",
+				"category": "Mu 2 Dev",
+				"title": "Reveal Development Log File in File Explorer"
+			},
+			{
+				"command": "muTwo.dev.showOutputChannel",
+				"category": "Mu 2 Dev",
+				"title": "Show Development Output Channel"
+			},
+			{
+				"command": "muTwo.dev.listDevices",
+				"category": "Mu 2 Dev",
+				"title": "List All Detected Devices"
+			},
+			{
+				"command": "muTwo.dev.refreshDevices",
+				"category": "Mu 2 Dev",
+				"title": "Refresh Device Detection"
+			},
+			{
 				"command": "muTwo.debug.checkContext",
 				"category": "Mu 2",
 				"title": "Debug Context Values"
@@ -880,6 +905,11 @@
 					"default": [],
 					"description": "Component types to log (empty array = all components)"
 				},
+				"muTwo.dev.writeToFile": {
+					"type": "boolean",
+					"default": true,
+					"description": "Write development logs to file in extension global storage (globalStorageUri/logs/)"
+				},
 				"muTwo.environment.showDebugInfo": {
 					"type": "boolean",
 					"default": false,
@@ -905,7 +935,7 @@
 	},
 	"scripts": {
 		"vscode:prepublish": "npm run build-all",
-		"build-extension": "vite build --config vite.extension.config.ts && (if not exist dist\\data mkdir dist\\data) && copy src\\data\\requirements.txt dist\\data\\ && (if not exist dist\\bin mkdir dist\\bin) && copy src\\bin\\*.mjs dist\\bin\\",
+		"build-extension": "vite build --config vite.extension.config.ts && (if not exist dist\\data mkdir dist\\data) && copy src\\data\\requirements.txt dist\\data\\ && copy src\\data\\circuitpython_devices.json dist\\data\\ && (if not exist dist\\bin mkdir dist\\bin) && copy src\\bin\\*.mjs dist\\bin\\",
 		"build-views": "cd views && npm run build",
 		"build-repl": "cd views && npm run build:repl",
 		"build-editor": "cd views && npm run build:editor",

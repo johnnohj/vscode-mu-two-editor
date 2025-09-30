@@ -13,32 +13,31 @@ let statusBarItem: vscode.StatusBarItem;
 
 /**
  * Initialize BoardManager as the primary device management system
+ * Phase 2: No longer requires deviceDetector - uses DeviceRegistry instead
  */
 export async function initializeBoardManager(
     context: vscode.ExtensionContext,
     deviceManager: any,
     languageClient: any,
-    deviceDetector: any,
     fileSystemProvider: any
 ): Promise<BoardManager> {
     logger.info('BOARD_EVENTS', 'Initializing BoardManager as primary device system...');
 
     try {
         // Check if required dependencies are available
-        if (!deviceManager || !languageClient || !deviceDetector) {
+        if (!deviceManager || !languageClient) {
             logger.warn('BOARD_EVENTS', 'Some required services for BoardManager not available, skipping BoardManager initialization');
             throw new Error('Required dependencies not available');
         }
 
         // File system provider is now passed directly (initialized early in activation)
 
-        // Create BoardManager as the primary device management system
+        // Create BoardManager - Phase 2: Uses DeviceRegistry internally
         const boardManager = new BoardManager(
             context,
             deviceManager,
             languageClient,
-            fileSystemProvider,
-            deviceDetector
+            fileSystemProvider
         );
 
         // Set up board event handlers

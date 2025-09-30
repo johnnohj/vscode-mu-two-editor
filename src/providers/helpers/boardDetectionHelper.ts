@@ -35,7 +35,9 @@ export class BoardDetectionHelper {
 	private logger = getLogger();
 
 	constructor(private context: vscode.ExtensionContext) {
-		this.deviceDetector = new MuDeviceDetector();
+		// Phase 2: MuDeviceDetector replaced by DeviceRegistry
+		// TODO: Update BoardDetectionHelper to use DeviceRegistry
+		this.deviceDetector = null as any; // Temporary until refactored
 	}
 
 	/**

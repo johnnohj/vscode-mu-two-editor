@@ -3,15 +3,14 @@
 
 import * as vscode from 'vscode';
 import { getLogger } from '../utils/unifiedLogger';
-import { ExtensionStateManager } from '../utils/extensionStateManager';
-import { SimpleDeviceDetector } from '../devices/simpleDeviceDetector';
+import { ComponentRegistry } from './componentRegistry';
+// Phase 2: SimpleDeviceDetector removed - using DeviceRegistry instead
 import { SimpleCommands } from '../commands/simpleCommands';
 import { MuTwoTaskProvider, registerTaskInputs } from '../cli/muTwoTasks';
 import { PythonEnvManager } from '../execution/pythonEnvManager';
 import { DeviceManager } from '../devices/core/deviceManager';
 import { MuTwoLanguageClient } from '../devices/core/client';
 import { MuDeviceDetector } from '../devices/core/deviceDetector';
-import { MuTwoFileSystemProvider } from '../workspace/filesystem/fileSystemProvider';
 import { CtpyDeviceFileSystemProvider } from '../workspace/filesystem/ctpyDeviceFSProvider';
 import { MuTwoWorkspace } from '../workspace/workspace';
 import { ensureSimplePythonVenv, setPythonEnvironmentVariables } from '../utils/simpleVenv';
@@ -20,16 +19,15 @@ import { registerLibraryManager, registerWorkspaceProjectsProvider } from './com
 
 const logger = getLogger();
 
-// Global state references that will be set during activation
-let stateManager: ExtensionStateManager;
-let simpleDeviceDetector: SimpleDeviceDetector;
+// Global component registry
+let componentRegistry: ComponentRegistry;
+// Phase 2: simpleDeviceDetector removed - using DeviceRegistry instead
 export let simpleCommands: SimpleCommands;
 let taskProvider: MuTwoTaskProvider;
 let deviceManager: DeviceManager;
 let languageClient: MuTwoLanguageClient;
 let deviceDetector: MuDeviceDetector;
 let pythonEnvManager: PythonEnvManager | null = null;
-let muTwoFileSystemProvider: MuTwoFileSystemProvider;
 let ctpyDeviceFileSystemProvider: CtpyDeviceFileSystemProvider;
 let languageOverrideManager: LanguageOverrideManager;
 
@@ -37,14 +35,14 @@ let languageOverrideManager: LanguageOverrideManager;
  * Initialize core infrastructure
  * This always succeeds - no external dependencies
  */
-export function initializeCore(context: vscode.ExtensionContext): ExtensionStateManager {
+export function initializeCore(context: vscode.ExtensionContext): ComponentRegistry {
     logger.info('ACTIVATION', 'Initializing core infrastructure...');
 
-    // Initialize state management
-    stateManager = ExtensionStateManager.getInstance(context);
+    // Initialize component registry
+    componentRegistry = ComponentRegistry.getInstance(context);
 
     // Initialize file system provider early for settings/config access
-    initializeFileSystemProvider(context, stateManager);
+    initializeFileSystemProvider(context, componentRegistry);
 
     // Create required directories (non-blocking)
     createDirectories(context).catch(error => {
@@ -52,7 +50,7 @@ export function initializeCore(context: vscode.ExtensionContext): ExtensionState
     });
 
     logger.info('ACTIVATION', 'Core infrastructure initialized');
-    return stateManager;
+    return componentRegistry;
 }
 
 export interface ActivationOptions {
@@ -68,17 +66,15 @@ export interface ActivationOptions {
  */
 export async function initializeEssentialServices(
 	context: vscode.ExtensionContext,
-	stateManager: ExtensionStateManager,
+	componentRegistry: ComponentRegistry,
 	options: ActivationOptions = {}
 ): Promise<{
 	pythonEnvManager: PythonEnvManager | null
-	simpleDeviceDetector: SimpleDeviceDetector
 	simpleCommands: SimpleCommands
 	taskProvider: MuTwoTaskProvider | null
 	deviceManager: DeviceManager | null
 	languageClient: MuTwoLanguageClient | null
 	deviceDetector: MuDeviceDetector | null
-	muTwoFileSystemProvider: MuTwoFileSystemProvider
 	ctpyDeviceFileSystemProvider: CtpyDeviceFileSystemProvider
 	languageOverrideManager: LanguageOverrideManager
 }> {
@@ -93,12 +89,10 @@ export async function initializeEssentialServices(
 		logger.warn('ACTIVATION', '⚠️ Python venv creation failed - some features may be limited');
 	}
 
-	// Initialize simple device detector
-	simpleDeviceDetector = new SimpleDeviceDetector();
-	await simpleDeviceDetector.detectDevices();
+	// Phase 2: SimpleDeviceDetector removed - DeviceRegistry initialized in extension.ts
 
-	// Initialize simple commands
-	simpleCommands = new SimpleCommands(context, simpleDeviceDetector);
+	// Initialize simple commands (Phase 2: no device detector passed)
+	simpleCommands = new SimpleCommands(context);
 	simpleCommands.registerCommands();
 
 	// Initialize language override manager for CircuitPython workspace detection
@@ -118,7 +112,8 @@ export async function initializeEssentialServices(
 	// Initialize core device services
 	deviceManager = initializeDeviceManager(context, stateManager)
 	languageClient = initializeLanguageClient(context, stateManager)
-	deviceDetector = initializeDeviceDetector(stateManager)
+	// Phase 2: MuDeviceDetector replaced by DeviceRegistry
+	deviceDetector = null
 
 	// Start LSP in background
 	if (languageClient) {
@@ -140,13 +135,11 @@ export async function initializeEssentialServices(
 
 	return {
 		pythonEnvManager,
-		simpleDeviceDetector,
 		simpleCommands,
 		taskProvider,
 		deviceManager,
 		languageClient,
 		deviceDetector,
-		muTwoFileSystemProvider,
 		ctpyDeviceFileSystemProvider,
 		languageOverrideManager
 	}
@@ -155,26 +148,12 @@ export async function initializeEssentialServices(
 /**
  * Initialize file system providers early for settings/config access
  */
-function initializeFileSystemProvider(context: vscode.ExtensionContext, stateManager: ExtensionStateManager): void {
-    logger.info('ACTIVATION', 'Initializing file system providers for early settings access...');
+function initializeFileSystemProvider(context: vscode.ExtensionContext, componentRegistry: ComponentRegistry): void {
+    logger.info('ACTIVATION', 'Initializing CircuitPython device file system provider...');
 
     try {
-        // Initialize Mu Two general file system provider (mutwo:// scheme)
-        muTwoFileSystemProvider = new MuTwoFileSystemProvider(context);
-
-        // Configure allowed directories immediately for settings access
-        configureMuTwoFileSystemProviderScope(context, muTwoFileSystemProvider);
-
-        // Register Mu Two file system provider with VS Code
-        context.subscriptions.push(
-            vscode.workspace.registerFileSystemProvider('mutwo', muTwoFileSystemProvider, {
-                isCaseSensitive: true,
-                isReadonly: false
-            })
-        );
-		  // TODO: Can we register more than one file system provider with VS Code? Or should this be
-		  // more an 'internal' provider?
         // Initialize CircuitPython device file system provider (ctpy:// scheme)
+        // Note: MuTwoFileSystemProvider removed - using VS Code workspace.fs API directly
         ctpyDeviceFileSystemProvider = new CtpyDeviceFileSystemProvider()
 
         // Register CircuitPython device file system provider with VS Code
@@ -189,45 +168,16 @@ function initializeFileSystemProvider(context: vscode.ExtensionContext, stateMan
 				)
 			)
 
-        stateManager.setComponent('muTwoFileSystemProvider', muTwoFileSystemProvider);
-        stateManager.setComponent(
+        componentRegistry.register(
 				'ctpyDeviceFileSystemProvider',
 				ctpyDeviceFileSystemProvider
 			)
-        logger.info('ACTIVATION', 'File system providers initialized successfully');
+        logger.info('ACTIVATION', 'CircuitPython device file system provider initialized successfully');
 
     } catch (error) {
-        logger.error('ACTIVATION', 'Failed to initialize file system providers:', error);
-        throw error; // This is critical for settings access
+        logger.error('ACTIVATION', 'Failed to initialize file system provider:', error);
+        throw error; // This is critical for device filesystem access
     }
-}
-
-/**
- * Configure the allowed directories for the Mu Two file system provider
- */
-function configureMuTwoFileSystemProviderScope(
-    context: vscode.ExtensionContext,
-    provider: MuTwoFileSystemProvider
-): void {
-    // Add extension storage directories immediately
-    if (context.storageUri) {
-        provider.addAllowedPath(context.storageUri.fsPath);
-        logger.info('ACTIVATION', `Added workspace storage path: ${context.storageUri.fsPath}`);
-    }
-
-    if (context.globalStorageUri) {
-        provider.addAllowedPath(context.globalStorageUri.fsPath);
-        logger.info('ACTIVATION', `Added global storage path: ${context.globalStorageUri.fsPath}`);
-    }
-
-    // Add current MuTwoWorkspace directory if one is open
-    const currentWorkspace = MuTwoWorkspace.rootPath;
-    if (currentWorkspace) {
-        provider.addAllowedPath(currentWorkspace.fsPath);
-        logger.info('ACTIVATION', `Added MuTwo workspace path: ${currentWorkspace.fsPath}`);
-    }
-
-    logger.info('ACTIVATION', `Mu Two file system provider configured with ${provider.getAllowedPaths().length} allowed directories`);
 }
 
 
@@ -236,7 +186,7 @@ function configureMuTwoFileSystemProviderScope(
  */
 async function initializePythonEnvironment(
     context: vscode.ExtensionContext,
-    stateManager: ExtensionStateManager,
+    componentRegistry: ComponentRegistry,
     options: ActivationOptions = {}
 ): Promise<PythonEnvManager | null> {
     try {
@@ -252,7 +202,7 @@ async function initializePythonEnvironment(
             logger.warn('ACTIVATION', 'No Python environment found by PythonEnvManager');
         }
 
-        stateManager.setComponent('pythonEnvManager', pythonEnv);
+        componentRegistry.register('pythonEnvManager', pythonEnv);
 
         // Register library manager and workspace projects provider now that Python environment is available
         try {
@@ -289,7 +239,7 @@ async function initializePythonEnvironment(
  */
 function initializeTaskProvider(
     context: vscode.ExtensionContext,
-    stateManager: ExtensionStateManager
+    componentRegistry: ComponentRegistry
 ): MuTwoTaskProvider | null {
     try {
         logger.info('ACTIVATION', 'Initializing task provider...');
@@ -305,7 +255,7 @@ function initializeTaskProvider(
         // Register task inputs
         registerTaskInputs(context);
 
-        stateManager.setComponent('taskProvider', provider);
+        componentRegistry.register('taskProvider', provider);
         logger.info('ACTIVATION', 'Task provider initialized successfully');
         return provider;
 
@@ -320,11 +270,11 @@ function initializeTaskProvider(
  */
 function initializeDeviceManager(
     context: vscode.ExtensionContext,
-    stateManager: ExtensionStateManager
+    componentRegistry: ComponentRegistry
 ): DeviceManager | null {
     try {
         const manager = new DeviceManager(context);
-        stateManager.setComponent('deviceManager', manager);
+        componentRegistry.register('deviceManager', manager);
         logger.info('ACTIVATION', 'Device manager initialized successfully');
         return manager;
 
@@ -339,11 +289,11 @@ function initializeDeviceManager(
  */
 function initializeLanguageClient(
     context: vscode.ExtensionContext,
-    stateManager: ExtensionStateManager
+    componentRegistry: ComponentRegistry
 ): MuTwoLanguageClient | null {
     try {
         const client = new MuTwoLanguageClient(context);
-        stateManager.setComponent('languageClient', client);
+        componentRegistry.register('languageClient', client);
         logger.info('ACTIVATION', 'Language client initialized successfully');
         return client;
 
@@ -356,10 +306,10 @@ function initializeLanguageClient(
 /**
  * Initialize device detector
  */
-function initializeDeviceDetector(stateManager: ExtensionStateManager): MuDeviceDetector | null {
+function initializeDeviceDetector(componentRegistry: ComponentRegistry): MuDeviceDetector | null {
     try {
         const detector = new MuDeviceDetector();
-        stateManager.setComponent('deviceDetector', detector);
+        componentRegistry.register('deviceDetector', detector);
         logger.info('ACTIVATION', 'Device detector initialized successfully');
         return detector;
 
@@ -373,27 +323,24 @@ function initializeDeviceDetector(stateManager: ExtensionStateManager): MuDevice
  * Create required directories (non-blocking)
  */
 async function createDirectories(context: vscode.ExtensionContext): Promise<void> {
+	const resourceLocator = getResourceLocator();
     const directories = [
 		// Mu 2's terminal shell handles creating our extension's venv,
 		// the files for which are included in globalStorage
 			vscode.Uri.joinPath(context.globalStorageUri, '.mu2'),
 			vscode.Uri.joinPath(context.globalStorageUri, '.mu2', 'data'),
-			// Logger .txt files output/backup
 			vscode.Uri.joinPath(context.globalStorageUri, '.mu2', 'logs'),
-			// WASM files go here
-			vscode.Uri.joinPath(context.globalStorageUri, 'bin'),
-			vscode.Uri.joinPath(context.globalStorageUri, 'bin', 'wasm-runtime'),
-			// Asset files like images and fonts
-			vscode.Uri.joinPath(context.globalStorageUri, 'common'),
-			// VS Code configurations (?)
-			vscode.Uri.joinPath(context.globalStorageUri, 'config'),
-			// Downloads and external files
-			vscode.Uri.joinPath(context.globalStorageUri, 'resources'),
+			// WASM runtime
+			resourceLocator.getWasmRuntimePath(),
+			// Configuration
+			resourceLocator.getConfigPath(),
+			// Resources (device database, etc.)
+			resourceLocator.getResourcesPath(),
 			// User workspaces and workspace registry
-			vscode.Uri.joinPath(context.globalStorageUri, 'workspaces'),
-			vscode.Uri.joinPath(context.globalStorageUri, 'workspaces', 'registry'),
-			// Different from 'config'?
-			vscode.Uri.joinPath(context.globalStorageUri, 'settings'),
+			resourceLocator.getWorkspacesRoot(),
+			vscode.Uri.joinPath(resourceLocator.getWorkspacesRoot(), 'registry'),
+			// Bundles
+			resourceLocator.getBundlesRoot(),
 		]
 
     await Promise.all(
@@ -414,6 +361,5 @@ export {
 	deviceManager,
 	languageClient,
 	deviceDetector,
-	muTwoFileSystemProvider,
 	ctpyDeviceFileSystemProvider
 }

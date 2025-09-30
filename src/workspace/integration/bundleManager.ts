@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { getLogger } from '../../utils/unifiedLogger';
+import { getResourceLocator } from '../../core/resourceLocator';
 
 /**
  * CircuitPython Bundle Manager
@@ -54,12 +55,13 @@ export class CircuitPythonBundleManager {
      * Initialize the bundle manager with terminal-based approach
      */
     public async initialize(): Promise<void> {
-        // Set up persistent resources path using globalStorageUri
-        if (this.context.globalStorageUri) {
-            this.resourcesPath = vscode.Uri.joinPath(this.context.globalStorageUri, 'resources').fsPath;
-            await vscode.workspace.fs.createDirectory(vscode.Uri.file(this.resourcesPath));
-            this.logger.info('BUNDLE', `Resources path initialized: ${this.resourcesPath}`);
-        }
+        // Set up persistent resources path using ResourceLocator
+        const resourceLocator = getResourceLocator();
+        const configPath = resourceLocator.getConfigPath();
+        this.resourcesPath = configPath.fsPath;
+
+        await vscode.workspace.fs.createDirectory(configPath);
+        this.logger.info('BUNDLE', `Resources path initialized: ${this.resourcesPath}`);
 
         // We'll determine the bundle path dynamically when needed
         // since the terminal profile handles Python environment setup
@@ -188,50 +190,6 @@ export class CircuitPythonBundleManager {
         }
     }
 
-    /**
-     * Populate CircuitPython bundle using circup native approach
-     */
-    public async downloadAndInstallBundle(): Promise<boolean> {
-        try {
-            if (!this.bundlePath || !this.pythonPath) {
-                throw new Error('Bundle installation path or Python path not available');
-            }
-
-            return await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Setting up CircuitPython Bundle',
-                cancellable: false
-            }, async (progress) => {
-                progress.report({ increment: 0, message: 'Installing required packages...' });
-
-                // Ensure circup is installed
-                await this.ensureCircupInstalled();
-
-                progress.report({ increment: 30, message: 'Discovering available modules...' });
-
-                // Generate modules list using circup
-                const modules = await this.generateModulesList();
-
-                progress.report({ increment: 60, message: 'Saving module definitions...' });
-
-                // Save internal modules list
-                await this.saveInternalModulesList(modules);
-
-                progress.report({ increment: 80, message: 'Installing CircuitPython libraries...' });
-
-                // Populate bundle using circup
-                await this.populateBundleWithCircup();
-
-                progress.report({ increment: 100, message: 'Bundle setup complete!' });
-                return true;
-            });
-
-        } catch (error) {
-            this.logger.error('BUNDLE', `Failed to setup CircuitPython bundle: ${error}`);
-            vscode.window.showErrorMessage(`Failed to setup CircuitPython bundle: ${error}`);
-            return false;
-        }
-    }
 
     /**
      * Get list of available libraries from persistent module list (circup bundle)
@@ -444,25 +402,6 @@ export class CircuitPythonBundleManager {
         return bundlePath;
     }
 
-    /**
-     * Ensure circup is installed
-     */
-    private async ensureCircupInstalled(): Promise<void> {
-        if (!this.pythonPath) {
-            throw new Error('Python path not available');
-        }
-
-        try {
-            // Check if circup is installed and working
-            await this.runPythonCommand(['-m', 'circup', '--version']);
-            this.logger.info('BUNDLE', 'circup is already installed and working');
-        } catch {
-            // Install circup
-            this.logger.info('BUNDLE', 'Installing circup...');
-            await this.runPythonCommand(['-m', 'pip', 'install', '--upgrade', 'circup']);
-            this.logger.info('BUNDLE', 'circup installed successfully');
-        }
-    }
 
     /**
      * Generate modules list using circup bundle-show --modules
@@ -1019,131 +958,6 @@ export class CircuitPythonBundleManager {
                 const content = await vscode.workspace.fs.readFile(sourcePath);
                 await vscode.workspace.fs.writeFile(destPath, content);
             }
-        }
-    }
-
-    /**
-     * Populate CircuitPython bundle using circup native approach
-     */
-    public async downloadAndInstallBundle(): Promise<boolean> {
-        try {
-            if (!this.bundlePath || !this.pythonPath) {
-                throw new Error('Bundle installation path or Python path not available');
-            }
-
-            return await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Setting up CircuitPython Bundle',
-                cancellable: false
-            }, async (progress) => {
-                progress.report({ increment: 10, message: 'Checking circup installation...' });
-
-                // Ensure circup is installed
-                await this.ensureCircupInstalled();
-
-                progress.report({ increment: 30, message: 'Discovering available modules...' });
-
-                // Generate modules list using circup
-                const modules = await this.generateModulesList();
-
-                progress.report({ increment: 60, message: 'Saving module definitions...' });
-
-                // Save to both persistent storage and internal location
-                await this.savePersistentModuleList(modules);
-                await this.saveInternalModulesList(modules);
-
-                progress.report({ increment: 80, message: 'Installing CircuitPython libraries...' });
-
-                // Populate bundle using circup
-                await this.populateBundleWithCircup();
-
-                progress.report({ increment: 100, message: 'Bundle setup complete!' });
-                return true;
-            });
-
-        } catch (error) {
-            this.logger.error('BUNDLE', `Failed to setup CircuitPython bundle: ${error}`);
-            vscode.window.showErrorMessage(`Failed to setup CircuitPython bundle: ${error}`);
-            return false;
-        }
-    }
-
-    /**
-     * Generate modules list using circup bundle-show --modules via terminal
-     */
-    private async generateModulesList(): Promise<string[]> {
-        try {
-            // Check if we have a recent persistent module list first
-            const existingData = await this.loadPersistentModuleList();
-            if (existingData) {
-                const lastUpdated = new Date(existingData.lastUpdated);
-                const hoursSinceUpdate = (Date.now() - lastUpdated.getTime()) / (1000 * 60 * 60);
-
-                if (hoursSinceUpdate < 1) { // Use cached data if less than 1 hour old
-                    this.logger.info('BUNDLE', `Using cached module list (${hoursSinceUpdate.toFixed(1)} hours old)`);
-                    return existingData.modules;
-                }
-            }
-
-            this.logger.info('BUNDLE', 'Discovering CircuitPython modules using circup via terminal...');
-
-            // Execute command and capture output directly
-            const command = `circup bundle-show --modules`;
-            const output = await this.executeCircupCommand(command, 'Discovering CircuitPython Modules');
-
-            // Parse the output - filter out empty lines and comments
-            const modules = output
-                .split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 0 && !line.startsWith('#'))
-                .sort();
-
-            if (modules.length === 0) {
-                // Fallback: return cached data if available
-                if (existingData) {
-                    this.logger.warn('BUNDLE', 'No modules found in circup output, using cached module list');
-                    return existingData.modules;
-                }
-                throw new Error('No modules found in circup output and no cached data available');
-            }
-
-            this.logger.info('BUNDLE', `Found ${modules.length} available CircuitPython modules`);
-            return modules;
-
-        } catch (error) {
-            this.logger.error('BUNDLE', `Failed to generate modules list: ${error}`);
-            throw error;
-        }
-    }
-
-    /**
-     * Save internal modules list to resources directory (replaces bundle directory approach)
-     */
-    private async saveInternalModulesList(modules: string[]): Promise<void> {
-        if (!this.resourcesPath) {
-            this.logger.warn('BUNDLE', 'Cannot save internal modules list: resources path not available');
-            return;
-        }
-
-        try {
-            const moduleData = {
-                modules: modules.sort(),
-                generated: new Date().toISOString(),
-                count: modules.length,
-                source: 'circup bundle-show --modules (terminal)'
-            };
-
-            const modulesJsonPath = vscode.Uri.file(path.join(this.resourcesPath, 'internal-modules.json'));
-
-            await vscode.workspace.fs.writeFile(
-                modulesJsonPath,
-                new TextEncoder().encode(JSON.stringify(moduleData, null, 2))
-            );
-
-            this.logger.info('BUNDLE', `Saved ${modules.length} modules to internal list: ${modulesJsonPath.fsPath}`);
-        } catch (error) {
-            this.logger.error('BUNDLE', `Failed to save internal modules list: ${error}`);
-            throw error;
         }
     }
 

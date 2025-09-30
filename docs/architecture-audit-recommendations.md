@@ -863,10 +863,7 @@ export interface WasmAPI {
 4. **Gradual migration** with feature flags if needed
 
 ### User Impact Minimization
-1. **No breaking changes** to commands or workflows
-2. **Maintain backward compatibility** for user settings
-3. **Communicate changes** in release notes
-4. **Beta testing** with community before release
+1. **None** pre-release development
 
 ---
 

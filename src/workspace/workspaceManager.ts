@@ -3,6 +3,9 @@ import { IDevice } from "../devices/core/deviceDetector";
 import { MuTwoWorkspace, WorkspaceConfig, BoardAssociation, PendingDownload, WorkspaceRegistry, WorkspaceRegistryEntry, WorkspaceFiles } from "./workspace";
 import { LearnGuideProvider } from "./integration/learnGuideProvider";
 import { getLogger } from '../utils/unifiedLogger';
+import { getDevLogger } from '../utils/devLogger';
+import { getResourceLocator } from '../core/resourceLocator';
+import { withProgress } from '../utils/progressHelper';
 import { BoardManager, IBoard } from "../devices/management/boardManager";
 
 export interface WorkspaceCreationOptions {
@@ -351,56 +354,65 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
      * Create a new workspace with proper file structure
      */
     private async createNewWorkspace(options: WorkspaceCreationOptions): Promise<boolean> {
-        // Get workspace location with proper URI fallback configuration
-        const workspaceLocation = options.workspaceLocation || await this.getWorkspaceLocation();
-        if (!workspaceLocation) {
-            return false;
-        }
+        const devLogger = getDevLogger();
 
-        // Generate workspace ID and name
-        const workspaceId = await this._workspaceUtil.generateWorkspaceId();
-
-        // In development mode, prefer 'mu2-test' as the workspace name for virtual workspaces
-        let workspaceName: string;
-        if (this._workspaceUtil.isDevelopmentMode() && !options.device && !options.workspaceName) {
-            workspaceName = 'mu2-test';
-            this._logger.info('WORKSPACE', 'Development mode: Using "mu2-test" as virtual workspace name');
-        } else {
-            workspaceName = options.workspaceName || options.device?.displayName || 'CircuitPython Project';
-        }
-
-        const safeName = this.sanitizeWorkspaceName(workspaceName);
-
-        // Create workspace directory
-        const workspaceUri = vscode.Uri.joinPath(vscode.Uri.file(workspaceLocation), safeName);
-
-        try {
-            await vscode.workspace.fs.createDirectory(workspaceUri);
-            this._logger.info('WORKSPACE', `Created workspace directory: ${workspaceUri}`);
-
-            // Create file structure
-            await this.createWorkspaceFileStructure(workspaceUri, workspaceId, workspaceName, options.device);
-
-            // Register workspace using URI object for improved cross-platform support
-            const vidPid = options.device ? `${options.device.vendorId}:${options.device.productId}` : undefined;
-            await this._workspaceUtil.registerWorkspace(workspaceId, workspaceUri, workspaceName, vidPid);
-
-            // Open the new workspace
-            // In development mode, reuse current window to avoid opening new VS Code instances
-            const reuseWindow = this.shouldReuseWindow();
-            await vscode.commands.executeCommand('vscode.openFolder', workspaceUri, !reuseWindow);
-
-            if (reuseWindow) {
-                this._logger.info('WORKSPACE', 'Development mode: Reusing current window for workspace');
+        return await withProgress('Creating Workspace', async (progress) => {
+            // Get workspace location with proper URI fallback configuration
+            progress.report({ message: 'Determining workspace location' });
+            const workspaceLocation = options.workspaceLocation || await this.getWorkspaceLocation();
+            if (!workspaceLocation) {
+                return false;
             }
 
-            this._logger.info('WORKSPACE', `Workspace created and opened: ${workspaceUri}`);
-            return true;
+            // Generate workspace ID and name
+            progress.report({ message: 'Generating workspace ID', increment: 10 });
+            const workspaceId = await this._workspaceUtil.generateWorkspaceId();
 
-        } catch (error) {
-            this._logger.error('WORKSPACE', `Failed to create workspace structure: ${error}`);
-            throw error;
-        }
+            // In development mode, prefer 'mu2-test' as the workspace name for virtual workspaces
+            let workspaceName: string;
+            if (this._workspaceUtil.isDevelopmentMode() && !options.device && !options.workspaceName) {
+                workspaceName = 'mu2-test';
+                devLogger.workspace('Development mode: Using "mu2-test" as virtual workspace name');
+            } else {
+                workspaceName = options.workspaceName || options.device?.displayName || 'CircuitPython Project';
+            }
+
+            const safeName = this.sanitizeWorkspaceName(workspaceName);
+
+            // Create workspace directory
+            const workspaceUri = vscode.Uri.joinPath(vscode.Uri.file(workspaceLocation), safeName);
+
+            try {
+                progress.report({ message: 'Creating workspace directory', increment: 20 });
+                await vscode.workspace.fs.createDirectory(workspaceUri);
+                devLogger.workspace(`Created workspace directory: ${workspaceUri.fsPath}`);
+
+                // Create file structure
+                progress.report({ message: 'Setting up project files', increment: 40 });
+                await this.createWorkspaceFileStructure(workspaceUri, workspaceId, workspaceName, options.device);
+
+                // Register workspace using URI object for improved cross-platform support
+                progress.report({ message: 'Registering workspace', increment: 20 });
+                const vidPid = options.device ? `${options.device.vendorId}:${options.device.productId}` : undefined;
+                await this._workspaceUtil.registerWorkspace(workspaceId, workspaceUri, workspaceName, vidPid);
+
+                // Open the new workspace
+                progress.report({ message: 'Opening workspace', increment: 10 });
+                const reuseWindow = this.shouldReuseWindow();
+                await vscode.commands.executeCommand('vscode.openFolder', workspaceUri, !reuseWindow);
+
+                if (reuseWindow) {
+                    devLogger.workspace('Development mode: Reusing current window for workspace');
+                }
+
+                devLogger.workspace(`Workspace created and opened: ${workspaceUri.fsPath}`);
+                return true;
+
+            } catch (error) {
+                devLogger.error('WORKSPACE', `Failed to create workspace structure`, error);
+                throw error;
+            }
+        });
     }
 
     /**
@@ -940,11 +952,11 @@ while True:
             }
         }
 
-        // Fallback to extension globalStorageUri (using activationManager-created directories)
+        // Fallback to extension globalStorageUri (using ResourceLocator)
         if (context?.globalStorageUri) {
             try {
-                // Use workspaces directory created by activationManager - no creation needed
-                const globalWorkspacePath = vscode.Uri.joinPath(context.globalStorageUri, 'workspaces');
+                const resourceLocator = getResourceLocator();
+                const globalWorkspacePath = resourceLocator.getWorkspacesRoot();
                 return globalWorkspacePath.fsPath;
             } catch (error) {
                 console.warn('Failed to use globalStorageUri workspaces directory:', error);

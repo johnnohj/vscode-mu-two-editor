@@ -470,4 +470,3 @@ export interface BoardMetadata {
 }
 
 // Backward compatibility export
-export const MuTwoFileSystemProvider = CtpyDeviceFileSystemProvider;

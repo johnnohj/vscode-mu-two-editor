@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 // import * as path from 'path'; // Migrated to VS Code URI-based path handling with fallback
 import { createCrossPlatformPath } from '../../utils/crossPlatformPath';
 import { AdafruitBundleManager } from '../core/AdafruitBundleManager';
+import { getResourceLocator } from '../../core/resourceLocator';
 
 export interface WasmDeploymentConfig {
     wasmRuntimePath?: string;
@@ -55,7 +56,8 @@ export class WasmDeploymentManager {
 
         try {
             // FIXED: Use directories created by activationManager
-            const globalStoragePath = this.context.globalStorageUri.fsPath;
+            const resourceLocator = getResourceLocator();
+            const globalStoragePath = resourceLocator.getGlobalStorageUri().fsPath;
             const wasmRuntimeDir = createCrossPlatformPath(globalStoragePath, 'bin', 'wasm-runtime');
 
             // Libraries now go in venv site-packages via MuTwoTerminalProfile
@@ -128,8 +130,9 @@ export class WasmDeploymentManager {
      */
     private getVenvSitePackagesPath(): string {
         // Use the standard venv location created by MuTwoTerminalProfile
+        const resourceLocator = getResourceLocator();
         const venvPath = createCrossPlatformPath(
-            this.context.globalStorageUri.fsPath,
+            resourceLocator.getGlobalStorageUri().fsPath,
             'python_env'
         );
 
@@ -149,7 +152,8 @@ export class WasmDeploymentManager {
      */
     async cleanupOldDeployments(): Promise<void> {
         try {
-            const globalStoragePath = this.context.globalStorageUri.fsPath;
+            const resourceLocator = getResourceLocator();
+            const globalStoragePath = resourceLocator.getGlobalStorageUri().fsPath;
             const wasmRuntimeDir = createCrossPlatformPath(globalStoragePath, 'bin', 'wasm-runtime');
 
             // Check if directory exists

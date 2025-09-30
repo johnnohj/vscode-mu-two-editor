@@ -3,7 +3,7 @@
 
 import * as vscode from 'vscode';
 import { getLogger } from '../utils/unifiedLogger';
-import { ExtensionStateManager } from '../utils/extensionStateManager';
+import { ComponentRegistry } from './componentRegistry';
 import { ReplViewProvider } from '../providers/views/replViewProvider';
 import { EditorReplPanelProvider } from '../providers/views/webviewPanelProvider';
 import { CtpyDeviceFileSystemProvider } from '../workspace/filesystem/ctpyDeviceFSProvider'
@@ -14,6 +14,7 @@ import { PythonEnvManager } from '../execution/pythonEnvManager';
 import { BoardManager, IBoard } from '../devices/management/boardManager';
 import { WorkspaceProjectsProvider } from '../providers/views/workspaceProjectsProvider';
 import { LibraryManagerProvider } from '../providers/views/libraryManagerProvider';
+import { getResourceLocator } from './resourceLocator';
 
 const logger = getLogger();
 
@@ -34,7 +35,7 @@ export let saveTwiceHandler: FileSaveTwiceHandler | null = null;
  */
 export function registerUIComponents(
     context: vscode.ExtensionContext,
-    stateManager: ExtensionStateManager
+    componentRegistry: ComponentRegistry
 ): {
     webviewViewProvider: ReplViewProvider;
     webviewPanelProvider: EditorReplPanelProvider;
@@ -42,8 +43,9 @@ export function registerUIComponents(
     logger.info('COMPONENTS', 'Registering UI components...');
 
     // Create REPL webview provider
-    webviewViewProvider = new ReplViewProvider(context.extensionUri, context);
-    stateManager.setComponent('viewProvider', webviewViewProvider);
+    const resourceLocator = getResourceLocator();
+    webviewViewProvider = new ReplViewProvider(resourceLocator.getExtensionUri(), context);
+    componentRegistry.register('viewProvider', webviewViewProvider);
 
     // Register webview provider
     context.subscriptions.push(
@@ -56,7 +58,7 @@ export function registerUIComponents(
 
     // Create webview panel provider for connected REPLs
     webviewPanelProvider = new EditorReplPanelProvider(context);
-    stateManager.setComponent('webviewPanelProvider', webviewPanelProvider);
+    componentRegistry.register('webviewPanelProvider', webviewPanelProvider);
     logger.info('COMPONENTS', 'Webview panel provider created for connected REPL functionality');
 
     // Set context variable to show the projects view in explorer
@@ -79,7 +81,7 @@ export function registerUIComponents(
 export function registerWorkspaceProjectsProvider(
     context: vscode.ExtensionContext,
     pythonEnvManager: PythonEnvManager,
-    stateManager: ExtensionStateManager
+    componentRegistry: ComponentRegistry
 ): void {
     logger.info('COMPONENTS', 'Registering workspace projects provider...');
 
@@ -91,7 +93,7 @@ export function registerWorkspaceProjectsProvider(
             showCollapseAll: false
         })
     );
-    stateManager.setComponent('workspaceProjectsProvider', workspaceProjectsProvider);
+    componentRegistry.register('workspaceProjectsProvider', workspaceProjectsProvider);
 
     logger.info('COMPONENTS', 'Workspace projects provider registered');
 }
@@ -102,7 +104,7 @@ export function registerWorkspaceProjectsProvider(
 export function registerLibraryManager(
     context: vscode.ExtensionContext,
     pythonEnvManager: PythonEnvManager,
-    stateManager: ExtensionStateManager
+    componentRegistry: ComponentRegistry
 ): void {
     logger.info('COMPONENTS', 'Registering library manager provider...');
 
@@ -114,7 +116,7 @@ export function registerLibraryManager(
             showCollapseAll: true
         })
     );
-    stateManager.setComponent('libraryManagerProvider', libraryManagerProvider);
+    componentRegistry.register('libraryManagerProvider', libraryManagerProvider);
 
     logger.info('COMPONENTS', 'Library manager provider registered');
 }

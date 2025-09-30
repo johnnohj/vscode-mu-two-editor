@@ -5,11 +5,13 @@
 
 import * as vscode from 'vscode';
 import { getLogger } from './unifiedLogger';
+import { getResourceLocator } from '../core/resourceLocator';
 
 const logger = getLogger();
 
 export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): Promise<string | null> {
-    const venvPath = vscode.Uri.joinPath(context.extensionUri, 'venv').fsPath;
+    const resourceLocator = getResourceLocator();
+    const venvPath = resourceLocator.getVenvPath().fsPath;
 
     // Initialize venv ready state as not ready
     const { ReplViewProvider } = await import('../providers/views/replViewProvider');
@@ -17,9 +19,7 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
 
     try {
         // Check if venv already exists using VS Code filesystem API
-        const pythonExe = process.platform === 'win32'
-            ? vscode.Uri.joinPath(context.extensionUri, 'venv', 'Scripts', 'python.exe')
-            : vscode.Uri.joinPath(context.extensionUri, 'venv', 'bin', 'python');
+        const pythonExe = resourceLocator.getPythonExecutablePath();
 
         await vscode.workspace.fs.stat(pythonExe);
 
@@ -74,9 +74,7 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
                             disposable.dispose();
 
                             // Check if venv was actually created by verifying the Python executable
-                            const pythonExe = process.platform === 'win32'
-                                ? vscode.Uri.joinPath(context.extensionUri, 'venv', 'Scripts', 'python.exe')
-                                : vscode.Uri.joinPath(context.extensionUri, 'venv', 'bin', 'python');
+                            const pythonExe = resourceLocator.getPythonExecutablePath();
 
                             vscode.workspace.fs.stat(pythonExe).then(
                                 async () => {
@@ -107,9 +105,7 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
                         disposable.dispose();
 
                         // Check if venv was created anyway
-                        const pythonExe = process.platform === 'win32'
-                            ? vscode.Uri.joinPath(context.extensionUri, 'venv', 'Scripts', 'python.exe')
-                            : vscode.Uri.joinPath(context.extensionUri, 'venv', 'bin', 'python');
+                        const pythonExe = resourceLocator.getPythonExecutablePath();
 
                         vscode.workspace.fs.stat(pythonExe).then(
                             async () => {

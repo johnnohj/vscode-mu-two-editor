@@ -142,7 +142,7 @@ export class ResourceLocator {
 
   /**
    * Get site-packages directory
-   * Platform-aware: Lib/site-packages on Windows, lib/python*/site-packages on Unix
+   * Platform-aware: Lib/site-packages on Windows, lib/pythonX.X/site-packages on Unix
    */
   public getSitePackagesPath(): vscode.Uri {
     const venvPath = this.getVenvPath();
@@ -238,6 +238,22 @@ export class ResourceLocator {
    */
   public getWasmBinaryPath(binaryName: string): vscode.Uri {
     return vscode.Uri.joinPath(this.getWasmRuntimePath(), binaryName);
+  }
+
+  /**
+   * Get resources root directory (for read-only data files)
+   * Location: globalStorageUri/resources/
+   */
+  public getResourcesPath(): vscode.Uri {
+    return vscode.Uri.joinPath(this.context.globalStorageUri, 'resources');
+  }
+
+  /**
+   * Get specific resource file path
+   * Location: globalStorageUri/resources/{filename}
+   */
+  public getResourceFilePath(filename: string): vscode.Uri {
+    return vscode.Uri.joinPath(this.getResourcesPath(), filename);
   }
 
   /**

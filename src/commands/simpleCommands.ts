@@ -5,13 +5,13 @@
 
 import * as vscode from 'vscode';
 import { spawn } from 'child_process';
-import { SimpleDeviceDetector } from '../devices/simpleDeviceDetector';
+// Phase 2: SimpleDeviceDetector removed - using DeviceRegistry
+import { getDeviceRegistry } from '../devices/core/deviceRegistry';
 import { ReplViewProvider } from '../providers/views/replViewProvider';
 
 export class SimpleCommands {
     constructor(
         private context: vscode.ExtensionContext,
-        private deviceDetector: SimpleDeviceDetector,
         private replViewProvider?: ReplViewProvider
     ) {}
 
@@ -40,22 +40,26 @@ export class SimpleCommands {
 
     /**
      * Refresh device detection
+     * Phase 2: Uses DeviceRegistry
      */
     private async refreshDevices(): Promise<void> {
         await vscode.window.withProgress(
             { location: vscode.ProgressLocation.Notification, title: 'Scanning for CircuitPython devices...' },
             async () => {
-                const devices = await this.deviceDetector.detectDevices();
-                vscode.window.showInformationMessage(`Found ${devices.length} CircuitPython device(s)`);
+                const deviceRegistry = getDeviceRegistry();
+                const devices = await deviceRegistry.refresh();
+                vscode.window.showInformationMessage(`Found ${devices.length} device(s)`);
             }
         );
     }
 
     /**
      * Connect to a CircuitPython device
+     * Phase 2: Uses DeviceRegistry
      */
     private async connectDevice(): Promise<void> {
-        const devices = this.deviceDetector.getDevices();
+        const deviceRegistry = getDeviceRegistry();
+        const devices = deviceRegistry.getCircuitPythonDevices();
 
         if (devices.length === 0) {
             const refresh = await vscode.window.showInformationMessage(

@@ -1,6 +1,7 @@
 // File: src/app/terminalHistoryManager.ts
 import * as vscode from 'vscode';
 import { getLogger } from '../../utils/unifiedLogger';
+import { getResourceLocator } from '../../core/resourceLocator';
 // import { SerialMessage } from './serialProvider'; // File deleted - using any for now
 type SerialMessage = any;
 
@@ -24,10 +25,11 @@ export class TerminalHistoryManager implements vscode.Disposable {
   private logger = getLogger();
 
   constructor(private _context: vscode.ExtensionContext) {
-    this._workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri || _context.globalStorageUri;
+    const resourceLocator = getResourceLocator();
+    this._workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri || resourceLocator.getGlobalStorageUri();
     this._historyFile = vscode.Uri.joinPath(this._workspaceUri, '.vscode', 'mu2-history.json');
     this._commandsFile = vscode.Uri.joinPath(this._workspaceUri, '.vscode', 'mu2-commands.json');
-    
+
     this._loadHistoryFromDisk();
   }
 

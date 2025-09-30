@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { EventEmitter } from 'events';
 // import { UnifiedDebugManager } from '../../sys/unifiedDebugManager'; // File removed during reorganization
 // import { PythonEnvManager } from '../../sys/pythonEnvManager'; // Moved to execution directory
+import { getResourceLocator } from '../core/resourceLocator';
 
 /**
  * Execution environment types
@@ -360,7 +361,8 @@ except Exception as e:
         memoryUsage?: { before: number; after: number; peak: number };
     }> {
         // Create temporary file for execution
-        const tempFile = vscode.Uri.joinPath(this.context.globalStorageUri, `blinka_exec_${Date.now()}.py`);
+        const resourceLocator = getResourceLocator();
+        const tempFile = vscode.Uri.joinPath(resourceLocator.getGlobalStorageUri(), `blinka_exec_${Date.now()}.py`);
         
         try {
             // Write code to temp file
@@ -398,7 +400,8 @@ print(f"MEMORY_PEAK:{peak}")
 `;
 
             // Execute profiling script
-            const profilingFile = vscode.Uri.joinPath(this.context.globalStorageUri, `blinka_profile_${Date.now()}.py`);
+            const resourceLocator = getResourceLocator();
+            const profilingFile = vscode.Uri.joinPath(resourceLocator.getGlobalStorageUri(), `blinka_profile_${Date.now()}.py`);
             await vscode.workspace.fs.writeFile(profilingFile, Buffer.from(profilingCode, 'utf8'));
 
             // Run the profiling script
@@ -555,7 +558,8 @@ except ImportError as e:
     exit(1)
 `;
             
-            const tempFile = vscode.Uri.joinPath(this.context.globalStorageUri, 'blinka_check.py');
+            const resourceLocator = getResourceLocator();
+            const tempFile = vscode.Uri.joinPath(resourceLocator.getGlobalStorageUri(), 'blinka_check.py');
             await vscode.workspace.fs.writeFile(tempFile, Buffer.from(checkScript, 'utf8'));
             
             try {

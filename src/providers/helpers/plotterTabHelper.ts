@@ -8,6 +8,7 @@
 import * as vscode from 'vscode';
 import { getNonce } from '../../utils/webview';
 import { getLogger } from '../../utils/unifiedLogger';
+import { getResourceLocator } from '../../core/resourceLocator';
 
 export interface PlotterDataPoint {
 	timestamp: number;
@@ -63,6 +64,7 @@ export class PlotterTabHelper {
 		this.logger.info('EXTENSION', `PlotterTabHelper: Creating plotter tab for session ${sessionId}`);
 
 		// Create webview panel in the right area (as mentioned in MU-TODO.md)
+		const resourceLocator = getResourceLocator();
 		const panel = vscode.window.createWebviewPanel(
 			'muTwo.plotter',
 			title,
@@ -70,7 +72,7 @@ export class PlotterTabHelper {
 			{
 				enableScripts: true,
 				retainContextWhenHidden: true,
-				localResourceRoots: [this.context.extensionUri]
+				localResourceRoots: [resourceLocator.getExtensionUri()]
 			}
 		);
 

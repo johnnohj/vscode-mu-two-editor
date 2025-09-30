@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 // } from './executionManager'; // File removed during reorganization
 // import { UnifiedDebugManager } from '../../sys/unifiedDebugManager'; // File removed during reorganization
 import { getLogger } from '../utils/unifiedLogger';
+import { getResourceLocator } from '../core/resourceLocator';
 
 /**
  * Execution mode selection for user interface
@@ -711,8 +712,9 @@ export class DualExecutionInterface {
             content += this.formatExecutionResult(result);
         }
 
+        const resourceLocator = getResourceLocator();
         const saveUri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.joinPath(this.context.globalStorageUri, fileName),
+            defaultUri: vscode.Uri.joinPath(resourceLocator.getGlobalStorageUri(), fileName),
             filters: {
                 'Markdown': ['md'],
                 'All Files': ['*']

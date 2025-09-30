@@ -313,7 +313,9 @@ export class MuDebugAdapter extends DebugSession {
     public constructor() {
         super();
 
-        this._deviceDetector = new MuDeviceDetector();
+        // Phase 2: MuDeviceDetector replaced by DeviceRegistry
+        // TODO: Update debug adapter to use DeviceRegistry
+        this._deviceDetector = null as any; // Temporary until refactored
         this._deviceModelFactory = new DeviceModelFactory();
         this._boardTemplateGenerator = new BoardTemplateGenerator();
 
