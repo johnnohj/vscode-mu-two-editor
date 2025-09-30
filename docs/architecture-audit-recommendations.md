@@ -660,8 +660,6 @@ export interface WasmAPI {
 "body-parser": "^2.2.0",
 "cors": "^2.8.5",
 "@xterm/headless": "^5.5.0"
-
-// Evaluate for removal:
 "micro-repl": "^0.8.2"
 ```
 

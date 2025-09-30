@@ -865,6 +865,21 @@
 					"default": true,
 					"description": "Validate Python environment on extension startup"
 				},
+				"muTwo.dev.logLevel": {
+					"type": "string",
+					"enum": ["DEBUG", "INFO", "WARN", "ERROR", "SUCCESS"],
+					"default": "INFO",
+					"description": "Minimum log level for development output channel"
+				},
+				"muTwo.dev.enabledComponents": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": ["DEVICE", "BOARD", "PYTHON", "BUNDLE", "WORKSPACE", "PROJECT", "TERMINAL", "REPL", "WASM", "FILE", "STATE", "EXTENSION"]
+					},
+					"default": [],
+					"description": "Component types to log (empty array = all components)"
+				},
 				"muTwo.environment.showDebugInfo": {
 					"type": "boolean",
 					"default": false,

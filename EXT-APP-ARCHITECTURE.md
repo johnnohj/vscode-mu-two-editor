@@ -471,7 +471,7 @@ const pty: vscode.Pseudoterminal = {
   onDidWrite: writeEmitter.event,
 
   open: () => {
-    writeEmitter.fire('CircuitPython 8.0.0\r\n>>> ');
+    writeEmitter.fire('CircuitPython 10.0.0\r\n>>> ');
   },
 
   close: () => {},
@@ -927,7 +927,7 @@ new vscode.Task(..., new vscode.ShellExecution('python -m pip install circup'))
 
 ---
 
-**Document Owner**: Extension Development Team
+**Document Owner**: Mu 2 Extension Development Team
 **Review Cycle**: Updated with each architectural change
 **Enforcement**: All PRs must comply with patterns herein
 
