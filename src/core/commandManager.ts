@@ -6,14 +6,14 @@ import { getLogger } from '../utils/unifiedLogger';
 import { ExtensionStateManager } from '../utils/extensionStateManager';
 import { BoardManager, IBoard } from '../devices/management/boardManager';
 import { PythonEnvManager } from '../execution/pythonEnvManager';
-import { MuTwoCLIProcessor } from '../cli/muTwoCLIProcessor';
 import {
     getWorkspaceManager,
     getProjectManager,
     getSaveTwiceHandler,
     webviewViewProvider,
-    editorPanelProvider,
-    webviewPanelProvider
+    webviewPanelProvider,
+    workspaceProjectsProvider,
+    libraryManagerProvider
 } from './componentManager';
 
 const logger = getLogger();
@@ -24,18 +24,19 @@ const logger = getLogger();
  */
 export function registerCommands(
     context: vscode.ExtensionContext,
-    boardManager: BoardManager,
-    cliProcessor: MuTwoCLIProcessor | null
+    boardManager: BoardManager
 ): void {
     logger.info('COMMANDS', 'Registering commands...');
 
     registerCoreCommands(context);
     registerBoardCommands(context, boardManager);
-    registerWorkspaceCommands(context);
+    registerWorkspaceCommands(context, boardManager);
     registerEditorCommands(context);
-    registerProjectCommands(context);
+    registerProjectCommands(context, boardManager);
+    registerProjectsViewCommands(context);
+    registerLibraryManagerCommands(context);
     registerPythonCommands(context);
-    registerCLICommands(context, cliProcessor);
+    // registerCLICommands removed - CLI processor no longer exists
     registerDebugCommands(context);
 
     logger.info('COMMANDS', 'Commands registered');
@@ -109,10 +110,10 @@ function registerBoardCommands(context: vscode.ExtensionContext, boardManager: B
 /**
  * Register workspace commands
  */
-function registerWorkspaceCommands(context: vscode.ExtensionContext): void {
+function registerWorkspaceCommands(context: vscode.ExtensionContext, boardManager: BoardManager): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.workspace.create', async () => {
-            const wm = await getWorkspaceManager(context);
+            const wm = await getWorkspaceManager(context, boardManager);
             await wm.createWorkspaceFlow();
             // Note: Save-twice handler will be initialized when needed
         })
@@ -120,9 +121,16 @@ function registerWorkspaceCommands(context: vscode.ExtensionContext): void {
 
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.workspace.open', async () => {
-            const wm = await getWorkspaceManager(context);
+            const wm = await getWorkspaceManager(context, boardManager);
             await wm.openWorkspaceCommand();
             // Note: Save-twice handler will be initialized when needed
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.workspace.changeBoardAssociation', async () => {
+            const wm = await getWorkspaceManager(context, boardManager);
+            await wm.changeBoardAssociationCommand();
         })
     );
 }
@@ -292,7 +300,7 @@ function registerEditorCommands(context: vscode.ExtensionContext): void {
             const textEditor = await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
 
             // Split the editor vertically for workspace view
-            await editorPanelProvider.createOrShowPanel();
+            await webviewPanelProvider.createOrShowPanel();
 
             logger.info('COMMANDS', 'Opened Python file in standard editor with vertical split');
         })
@@ -302,10 +310,10 @@ function registerEditorCommands(context: vscode.ExtensionContext): void {
 /**
  * Register project management commands
  */
-function registerProjectCommands(context: vscode.ExtensionContext): void {
+function registerProjectCommands(context: vscode.ExtensionContext, boardManager: BoardManager): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.project.load', async () => {
-            await loadProjectCommand(context);
+            await loadProjectCommand(context, boardManager);
         })
     );
 
@@ -329,6 +337,171 @@ function registerProjectCommands(context: vscode.ExtensionContext): void {
 }
 
 /**
+ * Register workspace projects view commands
+ */
+function registerProjectsViewCommands(context: vscode.ExtensionContext): void {
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.projects.refresh', () => {
+            workspaceProjectsProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.projects.toggleSelection', (projectName: string) => {
+            workspaceProjectsProvider.toggleProjectSelection(projectName);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.projects.resumeSelected', async () => {
+            await workspaceProjectsProvider.resumeSelectedProjects();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.projects.saveCurrentAs', async () => {
+            await workspaceProjectsProvider.saveCurrentAsProject();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.projects.clearSelections', () => {
+            workspaceProjectsProvider.clearSelections();
+        })
+    );
+
+    // Requirements.txt management commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.projects.generateRequirements', async () => {
+            const pythonEnvManager = getPythonEnvManager();
+            if (!pythonEnvManager) {
+                vscode.window.showErrorMessage('Python environment not available');
+                return;
+            }
+
+            const bundleManager = pythonEnvManager.getBundleManager();
+            if (!bundleManager) {
+                vscode.window.showErrorMessage('Bundle manager not available');
+                return;
+            }
+
+            try {
+                const success = await bundleManager.generateRequirementsFromWorkspace();
+                if (success) {
+                    vscode.window.showInformationMessage('Requirements.txt generated successfully from workspace libraries');
+                } else {
+                    vscode.window.showErrorMessage('Failed to generate requirements.txt');
+                }
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to generate requirements.txt: ${error}`);
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.projects.installFromRequirements', async () => {
+            const pythonEnvManager = getPythonEnvManager();
+            if (!pythonEnvManager) {
+                vscode.window.showErrorMessage('Python environment not available');
+                return;
+            }
+
+            const bundleManager = pythonEnvManager.getBundleManager();
+            if (!bundleManager) {
+                vscode.window.showErrorMessage('Bundle manager not available');
+                return;
+            }
+
+            try {
+                const hasRequirements = await bundleManager.hasRequirementsFile();
+                if (!hasRequirements) {
+                    vscode.window.showWarningMessage('No requirements.txt file found in workspace');
+                    return;
+                }
+
+                const success = await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Installing libraries from requirements.txt',
+                    cancellable: false
+                }, async () => {
+                    return await bundleManager.installLibrariesFromRequirements();
+                });
+
+                if (success) {
+                    vscode.window.showInformationMessage('Libraries installed successfully from requirements.txt');
+                    // Refresh library manager view if available
+                    if (libraryManagerProvider) {
+                        libraryManagerProvider.refresh();
+                    }
+                } else {
+                    vscode.window.showErrorMessage('Failed to install libraries from requirements.txt');
+                }
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to install from requirements.txt: ${error}`);
+            }
+        })
+    );
+}
+
+/**
+ * Register library manager commands
+ */
+function registerLibraryManagerCommands(context: vscode.ExtensionContext): void {
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.library.refresh', () => {
+            if (libraryManagerProvider) {
+                libraryManagerProvider.refresh();
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.library.install', async (libraryName: string) => {
+            if (libraryManagerProvider) {
+                await libraryManagerProvider.installLibrary(libraryName);
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.library.remove', async (libraryName: string) => {
+            if (libraryManagerProvider) {
+                await libraryManagerProvider.removeLibrary(libraryName);
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.library.downloadBundle', async () => {
+            if (libraryManagerProvider) {
+                await libraryManagerProvider.downloadBundle();
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.library.search', async () => {
+            const searchTerm = await vscode.window.showInputBox({
+                prompt: 'Search CircuitPython libraries',
+                placeHolder: 'Enter library name or keyword...'
+            });
+
+            if (searchTerm !== undefined && libraryManagerProvider) {
+                libraryManagerProvider.setSearchFilter(searchTerm);
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('muTwo.library.info', async (libraryName: string) => {
+            if (libraryManagerProvider) {
+                await libraryManagerProvider.showLibraryInfo(libraryName);
+            }
+        })
+    );
+}
+
+/**
  * Register Python environment commands
  */
 function registerPythonCommands(context: vscode.ExtensionContext): void {
@@ -341,14 +514,15 @@ function registerPythonCommands(context: vscode.ExtensionContext): void {
 
 /**
  * Register CLI commands
+ * NOTE: CLI processor has been removed - these commands are deprecated
  */
-function registerCLICommands(context: vscode.ExtensionContext, cliProcessor: MuTwoCLIProcessor | null): void {
-    context.subscriptions.push(
-        vscode.commands.registerCommand('muTwo.testCLI', async () => {
-            await testCLICommand(cliProcessor);
-        })
-    );
-}
+// function registerCLICommands(context: vscode.ExtensionContext): void {
+//     context.subscriptions.push(
+//         vscode.commands.registerCommand('muTwo.testCLI', async () => {
+//             vscode.window.showInformationMessage('CLI commands have been removed');
+//         })
+//     );
+// }
 
 /**
  * Register debug commands
@@ -590,9 +764,9 @@ async function viewBoardFilesCommand(board: IBoard): Promise<void> {
     vscode.window.showInformationMessage('Board file browser feature coming soon');
 }
 
-async function loadProjectCommand(context: vscode.ExtensionContext): Promise<void> {
+async function loadProjectCommand(context: vscode.ExtensionContext, boardManager: BoardManager): Promise<void> {
     try {
-        const wm = await getWorkspaceManager(context);
+        const wm = await getWorkspaceManager(context, boardManager);
         const pm = getProjectManager(context);
 
         const projects = await pm.listProjects();
@@ -698,56 +872,46 @@ async function setupPythonEnvironmentCommand(context: vscode.ExtensionContext): 
     }
 }
 
-async function testCLICommand(cliProcessor: MuTwoCLIProcessor | null): Promise<void> {
-    if (!cliProcessor) {
-        vscode.window.showErrorMessage('CLI processor not initialized');
-        return;
-    }
-
-    const testCommands = [
-        'mu help',
-        'mu version',
-        'mu env status',
-        'mu runtime status',
-        'mu devices',
-        'mu config list'
-    ];
-
-    const selectedCommand = await vscode.window.showQuickPick(testCommands, {
-        placeHolder: 'Select a CLI command to test'
-    });
-
-    if (!selectedCommand) {
-        return;
-    }
-
-    try {
-        logger.info('COMMANDS', `Testing CLI command: ${selectedCommand}`);
-        const result = await cliProcessor.processCommand(selectedCommand);
-
-        let message = `Command: ${selectedCommand}\n`;
-        message += `Type: ${result.type}\n`;
-
-        if (result.message) {
-            message += `Result:\n${result.message}`;
-        }
-
-        if (result.type === 'success') {
-            vscode.window.showInformationMessage(`CLI Test Passed!\n\n${message}`, { modal: true });
-        } else if (result.type === 'error') {
-            vscode.window.showErrorMessage(`CLI Test Failed!\n\n${message}`, { modal: true });
-        } else {
-            vscode.window.showInformationMessage(`CLI Test - ${result.type}\n\n${message}`, { modal: true });
-        }
-
-        logger.info('COMMANDS', `CLI test result:`, result);
-
-    } catch (error) {
-        const errorMessage = `CLI test failed: ${error instanceof Error ? error.message : String(error)}`;
-        vscode.window.showErrorMessage(errorMessage);
-        logger.error('COMMANDS', 'CLI test error:', error);
-    }
-}
+// Removed: CLI processor no longer exists
+// async function testCLICommand(): Promise<void> {
+//     const testCommands = [
+//         'mu help',
+//         'mu version',
+//         'mu env status',
+//         'mu runtime status',
+//         'mu devices',
+//         'mu config list'
+//     ];
+//
+//     const selectedCommand = await vscode.window.showQuickPick(testCommands, {
+//         placeHolder: 'Select a CLI command to test'
+//     });
+//
+//     if (!selectedCommand) {
+//         return;
+//     }
+//
+//     try {
+//         logger.info('COMMANDS', `Testing CLI command: ${selectedCommand}`);
+//         // const result = await cliProcessor.processCommand(selectedCommand);
+//
+//         let message = `Command: ${selectedCommand}\n`;
+//         // message += `Type: ${result.type}\n`;
+//
+//         // if (result.message) {
+//         //     message += `Result:\n${result.message}`;
+//         // }
+//
+//         vscode.window.showInformationMessage(`CLI commands have been removed`, { modal: true });
+//
+// //         logger.info('COMMANDS', `CLI test - feature removed`);
+//
+//     } catch (error) {
+//         const errorMessage = `CLI test failed: ${error instanceof Error ? error.message : String(error)}`;
+//         vscode.window.showErrorMessage(errorMessage);
+//         logger.error('COMMANDS', 'CLI test error:', error);
+//     }
+// }
 
 async function testWebviewPanelCommand(context: vscode.ExtensionContext): Promise<void> {
     const testOptions = [

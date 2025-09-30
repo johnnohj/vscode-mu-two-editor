@@ -16,6 +16,7 @@ import { CtpyDeviceFileSystemProvider } from '../workspace/filesystem/ctpyDevice
 import { MuTwoWorkspace } from '../workspace/workspace';
 import { ensureSimplePythonVenv, setPythonEnvironmentVariables } from '../utils/simpleVenv';
 import { LanguageOverrideManager } from '../services/languageOverrideManager';
+import { registerLibraryManager, registerWorkspaceProjectsProvider } from './componentManager';
 
 const logger = getLogger();
 
@@ -252,6 +253,22 @@ async function initializePythonEnvironment(
         }
 
         stateManager.setComponent('pythonEnvManager', pythonEnv);
+
+        // Register library manager and workspace projects provider now that Python environment is available
+        try {
+            registerLibraryManager(context, pythonEnv, stateManager);
+            logger.info('ACTIVATION', 'Library manager registered successfully');
+        } catch (error) {
+            logger.warn('ACTIVATION', 'Failed to register library manager:', error);
+        }
+
+        try {
+            registerWorkspaceProjectsProvider(context, pythonEnv, stateManager);
+            logger.info('ACTIVATION', 'Workspace projects provider registered successfully');
+        } catch (error) {
+            logger.warn('ACTIVATION', 'Failed to register workspace projects provider:', error);
+        }
+
         return pythonEnv;
 
     } catch (error) {

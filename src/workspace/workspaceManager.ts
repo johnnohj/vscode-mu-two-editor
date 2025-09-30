@@ -3,6 +3,7 @@ import { IDevice } from "../devices/core/deviceDetector";
 import { MuTwoWorkspace, WorkspaceConfig, BoardAssociation, PendingDownload, WorkspaceRegistry, WorkspaceRegistryEntry, WorkspaceFiles } from "./workspace";
 import { LearnGuideProvider } from "./integration/learnGuideProvider";
 import { getLogger } from '../utils/unifiedLogger';
+import { BoardManager, IBoard } from "../devices/management/boardManager";
 
 export interface WorkspaceCreationOptions {
     device?: IDevice;
@@ -15,10 +16,12 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
     private _workspaceUtil: MuTwoWorkspace;
     private _learnGuideProvider: LearnGuideProvider;
     private _logger = getLogger();
+    private _boardManager: BoardManager;
 
-    constructor(context: vscode.ExtensionContext) {
+    constructor(context: vscode.ExtensionContext, boardManager: BoardManager) {
         this._workspaceUtil = MuTwoWorkspace.getInstance(context);
         this._learnGuideProvider = new LearnGuideProvider();
+        this._boardManager = boardManager;
         // Using unified logger instead of createOutputChannel('Mu 2 Workspace Manager')
 
         // Initialize development mode handling
@@ -80,23 +83,268 @@ export class MuTwoWorkspaceManager implements vscode.Disposable {
      * Handle manual workspace creation (no board detected)
      */
     private async handleManualWorkspaceCreation(options: WorkspaceCreationOptions): Promise<boolean> {
-        const choice = await vscode.window.showInformationMessage(
-            'Mu 2 does not detect any boards connected currently. Would you still like to create a workspace?',
-            'Create Virtual Workspace',
-            'Wait for Board',
-            'Cancel'
-        );
-
-        switch (choice) {
-            case 'Create Virtual Workspace':
-                return await this.createNewWorkspace(options);
-            case 'Wait for Board':
-                vscode.window.showInformationMessage('Please connect a CircuitPython board and try again.');
-                return false;
-            case 'Cancel':
-            default:
-                return false;
+        // Check if board manager is available
+        if (!this._boardManager) {
+            this._logger.error('WORKSPACE', 'Board manager not initialized');
+            vscode.window.showErrorMessage('Board manager not initialized. Please try again later.');
+            return false;
         }
+
+        // Check if we have any boards in the board manager (connected or not)
+        const availableBoards = this._boardManager.getAllBoards();
+
+        if (availableBoards.length === 0) {
+            // No boards in database - refresh detection first
+            await this._boardManager.refreshDevices();
+            const refreshedBoards = this._boardManager.getAllBoards();
+
+            if (refreshedBoards.length === 0) {
+                const choice = await vscode.window.showInformationMessage(
+                    'No CircuitPython boards detected. Please connect a board or wait for detection to complete.',
+                    'Refresh Detection',
+                    'Cancel'
+                );
+
+                if (choice === 'Refresh Detection') {
+                    return await this.handleManualWorkspaceCreation(options);
+                }
+                return false;
+            }
+        }
+
+        // Show board selection UI
+        const selectedBoard = await this.showBoardSelectionUI();
+        if (!selectedBoard) {
+            return false;
+        }
+
+        // Create workspace with selected board
+        return await this.createNewWorkspace({
+            ...options,
+            device: {
+                id: selectedBoard.id,
+                path: selectedBoard.connectionState.deviceInfo?.path || '',
+                vendorId: selectedBoard.connectionState.deviceInfo?.displayName?.split(':')[0],
+                productId: selectedBoard.connectionState.deviceInfo?.displayName?.split(':')[1],
+                displayName: selectedBoard.name,
+                confidence: 'high' as const,
+                hasConflict: false
+            } as IDevice
+        });
+    }
+
+    /**
+     * Show board selection UI with connected devices and database boards
+     */
+    private async showBoardSelectionUI(): Promise<IBoard | null> {
+        const connectedBoards = this._boardManager.getConnectedBoards();
+        const allBoards = this._boardManager.getAllBoards();
+
+        // Create quick pick items
+        const items: Array<vscode.QuickPickItem & { board?: IBoard; isDatabase?: boolean; vidPid?: string }> = [];
+
+        // Add connected boards section
+        if (connectedBoards.length > 0) {
+            items.push({
+                label: '$(device-mobile) Connected Devices',
+                kind: vscode.QuickPickItemKind.Separator
+            });
+
+            connectedBoards.forEach(board => {
+                items.push({
+                    label: `$(plug) ${board.name}`,
+                    description: 'Connected',
+                    detail: `${board.type.toUpperCase()} board - Ready to use`,
+                    board
+                });
+            });
+        }
+
+        // Add other detected boards
+        const disconnectedBoards = allBoards.filter(board => !board.isConnected());
+        if (disconnectedBoards.length > 0) {
+            items.push({
+                label: '$(device-desktop) Detected Devices',
+                kind: vscode.QuickPickItemKind.Separator
+            });
+
+            disconnectedBoards.forEach(board => {
+                items.push({
+                    label: `$(circle-outline) ${board.name}`,
+                    description: 'Not connected',
+                    detail: `${board.type.toUpperCase()} board - Will use board configuration`,
+                    board
+                });
+            });
+        }
+
+        // Add database boards section
+        items.push({
+            label: '$(library) CircuitPython Board Database',
+            kind: vscode.QuickPickItemKind.Separator
+        });
+
+        // Get popular boards from database
+        const popularBoards = this.getPopularBoardsFromDatabase();
+        popularBoards.forEach(boardInfo => {
+            items.push({
+                label: `$(chip) ${boardInfo.displayName}`,
+                description: `${boardInfo.manufacturer}`,
+                detail: `VID:PID ${boardInfo.vidPid} - Use for workspace setup`,
+                isDatabase: true,
+                vidPid: boardInfo.vidPid
+            });
+        });
+
+        // Show quick pick
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Select a CircuitPython board for this workspace',
+            ignoreFocusOut: true,
+            matchOnDescription: true,
+            matchOnDetail: true
+        });
+
+        if (!selected) {
+            return null;
+        }
+
+        // Return connected/detected board
+        if (selected.board) {
+            return selected.board;
+        }
+
+        // Create virtual board from database selection
+        if (selected.isDatabase && selected.vidPid) {
+            return this.createVirtualBoardFromDatabase(selected.vidPid, selected.label);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get popular CircuitPython boards from database for selection
+     */
+    private getPopularBoardsFromDatabase(): Array<{displayName: string; manufacturer: string; vidPid: string}> {
+        // Access the device database through the board manager's device detector
+        const deviceDetector = this._boardManager.getDeviceDetector();
+        const stats = deviceDetector.getDatabaseStats();
+
+        // For now, return a curated list of popular boards
+        // In the future, this could be data-driven from the database
+        return [
+            {
+                displayName: 'Adafruit Feather ESP32-S3',
+                manufacturer: 'Adafruit Industries',
+                vidPid: '0x239A:0x80F4'
+            },
+            {
+                displayName: 'Adafruit Metro M4',
+                manufacturer: 'Adafruit Industries',
+                vidPid: '0x239A:0x8014'
+            },
+            {
+                displayName: 'Raspberry Pi Pico',
+                manufacturer: 'Raspberry Pi',
+                vidPid: '0x2E8A:0x0005'
+            },
+            {
+                displayName: 'Adafruit QT Py ESP32-S3',
+                manufacturer: 'Adafruit Industries',
+                vidPid: '0x239A:0x80F4'
+            },
+            {
+                displayName: 'ESP32-S3 DevKit',
+                manufacturer: 'Espressif',
+                vidPid: '0x303A:0x7003'
+            }
+        ];
+    }
+
+    /**
+     * Create a virtual board representation from database info
+     */
+    private createVirtualBoardFromDatabase(vidPid: string, boardName: string): IBoard {
+        const [vid, pid] = vidPid.split(':');
+
+        // Create a minimal virtual board for workspace association
+        return {
+            id: `virtual-${vidPid}`,
+            name: boardName.replace('$(chip) ', ''),
+            type: 'virtual' as const,
+            connectionState: {
+                connected: false,
+                connecting: false,
+                deviceInfo: {
+                    path: '',
+                    displayName: boardName.replace('$(chip) ', ''),
+                    boardId: vidPid
+                }
+            },
+            capabilities: {
+                hasFileSystem: true,
+                hasRepl: true,
+                supportsDebugging: true,
+                supportsFileTransfer: true
+            },
+            connect: async () => { throw new Error('Virtual board cannot be connected'); },
+            disconnect: async () => { throw new Error('Virtual board cannot be disconnected'); },
+            isConnected: () => false,
+            eval: async () => ({ success: false, error: 'Virtual board does not support code execution' }),
+            executeFile: async () => ({ success: false, error: 'Virtual board does not support file execution' }),
+            interrupt: async () => { throw new Error('Virtual board does not support interruption'); },
+            restart: async () => { throw new Error('Virtual board does not support restart'); },
+            readFile: async () => { throw new Error('Virtual board does not support file operations'); },
+            writeFile: async () => { throw new Error('Virtual board does not support file operations'); },
+            listFiles: async () => [],
+            deleteFile: async () => { throw new Error('Virtual board does not support file operations'); },
+            createReplSession: async () => { throw new Error('Virtual board does not support REPL'); },
+            sendToRepl: async () => { throw new Error('Virtual board does not support REPL'); },
+            closeReplSession: async () => { throw new Error('Virtual board does not support REPL'); },
+            onConnectionStateChanged: new vscode.EventEmitter<any>().event,
+            onFileSystemChanged: new vscode.EventEmitter<any>().event,
+            onReplOutput: new vscode.EventEmitter<any>().event,
+            dispose: () => {}
+        } as IBoard;
+    }
+
+    /**
+     * Open workspace command - shows workspace selection UI
+     */
+    public async openWorkspaceCommand(): Promise<boolean> {
+        // Get list of existing workspaces
+        const workspaces = await this.listWorkspaces();
+
+        if (workspaces.length === 0) {
+            const choice = await vscode.window.showInformationMessage(
+                'No existing workspaces found. Would you like to create a new workspace?',
+                'Create New Workspace',
+                'Cancel'
+            );
+
+            if (choice === 'Create New Workspace') {
+                return await this.createWorkspaceFlow();
+            }
+            return false;
+        }
+
+        // Show workspace selection
+        const items = workspaces.map(workspace => ({
+            label: workspace.name,
+            description: workspace.deviceAssociation?.boardName || 'No board associated',
+            detail: `Created: ${new Date(workspace.created).toLocaleDateString()}, Last accessed: ${new Date(workspace.lastAccessed).toLocaleDateString()}`,
+            workspace
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Select a workspace to open',
+            ignoreFocusOut: true
+        });
+
+        if (selected) {
+            return await this.openWorkspaceWithFiles(selected.workspace.id);
+        }
+
+        return false;
     }
 
     /**
@@ -787,6 +1035,72 @@ while True:
     }
 
     /**
+     * Change board association for current workspace
+     */
+    public async changeBoardAssociationCommand(): Promise<void> {
+        const currentWorkspace = MuTwoWorkspace.rootPath;
+        if (!currentWorkspace) {
+            vscode.window.showErrorMessage('No workspace is currently open.');
+            return;
+        }
+
+        const isMu2 = await this._workspaceUtil.isMuTwoWorkspace(currentWorkspace);
+        if (!isMu2) {
+            vscode.window.showErrorMessage('Current workspace is not a Mu 2 workspace.');
+            return;
+        }
+
+        try {
+            // Get current board association
+            const currentAssociation = await this._workspaceUtil.getBoardAssociation(currentWorkspace);
+
+            // Show board selection UI
+            const selectedBoard = await this.showBoardSelectionUI();
+            if (!selectedBoard) {
+                return; // User cancelled
+            }
+
+            // Create device representation from selected board
+            const device: IDevice = {
+                id: selectedBoard.id,
+                path: selectedBoard.connectionState.deviceInfo?.path || '',
+                vendorId: selectedBoard.connectionState.deviceInfo?.displayName?.split(':')[0],
+                productId: selectedBoard.connectionState.deviceInfo?.displayName?.split(':')[1],
+                displayName: selectedBoard.name,
+                confidence: 'high' as const,
+                hasConflict: false
+            };
+
+            // Confirm the change if there's an existing association
+            if (currentAssociation) {
+                const choice = await vscode.window.showWarningMessage(
+                    `This workspace is currently associated with "${currentAssociation.board_name}". Do you want to change it to "${device.displayName}"?`,
+                    { modal: true },
+                    'Change Association',
+                    'Cancel'
+                );
+
+                if (choice !== 'Change Association') {
+                    return;
+                }
+            }
+
+            // Update the association
+            await this.associateBoardWithWorkspace(device, currentWorkspace);
+
+            vscode.window.showInformationMessage(
+                `Workspace board association changed to "${device.displayName}".`
+            );
+
+            this._logger.info('WORKSPACE', `Board association changed to ${device.displayName}`);
+
+        } catch (error) {
+            this._logger.error('WORKSPACE', `Failed to change board association: ${error}`);
+            vscode.window.showErrorMessage(`Failed to change board association: ${error}`);
+        }
+    }
+
+    /**
      * Associate a board with the current workspace
      */
     private async associateBoardWithWorkspace(device: IDevice, workspaceUri: vscode.Uri): Promise<void> {
@@ -1139,7 +1453,10 @@ while True:
                 },
                 "python.analysis.extraPaths": [
                     "${workspaceFolder}/lib"
-                ]
+                ],
+                "python.analysis.diagnosticSeverityOverrides": {
+                    "reportShadowedImports": "none"  // CircuitPython requires code.py/main.py as entry points
+                }
             },
             extensions: {
                 recommendations: [

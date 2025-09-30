@@ -60,6 +60,18 @@
 					"name": "REPL",
 					"icon": "assets/Mu2NoCirc-Red.svg"
 				}
+			],
+			"explorer": [
+				{
+					"id": "muTwo.workspaceProjects",
+					"name": "CircuitPython Projects",
+					"when": "workspaceHasProjectsFolder"
+				},
+				{
+					"id": "muTwo.libraryManager",
+					"name": "CircuitPython Libraries",
+					"when": "workspaceHasProjectsFolder"
+				}
 			]
 		},
 		"menus": {
@@ -154,7 +166,55 @@
 					"when": "muTwo.editor.navIcon == true && muTwo.editor.panelCollapsed == true"
 				}
 			],
-			"view/title": []
+			"view/title": [
+				{
+					"command": "muTwo.projects.refresh",
+					"when": "view == muTwo.workspaceProjects",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.projects.resumeSelected",
+					"when": "view == muTwo.workspaceProjects",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.projects.saveCurrentAs",
+					"when": "view == muTwo.workspaceProjects",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.library.refresh",
+					"when": "view == muTwo.libraryManager",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.library.search",
+					"when": "view == muTwo.libraryManager",
+					"group": "navigation"
+				},
+				{
+					"command": "muTwo.library.downloadBundle",
+					"when": "view == muTwo.libraryManager",
+					"group": "navigation"
+				}
+			],
+			"view/item/context": [
+				{
+					"command": "muTwo.library.install",
+					"when": "view == muTwo.libraryManager && viewItem == availableLibrary",
+					"group": "inline"
+				},
+				{
+					"command": "muTwo.library.remove",
+					"when": "view == muTwo.libraryManager && viewItem == installedLibrary",
+					"group": "inline"
+				},
+				{
+					"command": "muTwo.library.info",
+					"when": "view == muTwo.libraryManager && viewItem =~ /Library$/",
+					"group": "context"
+				}
+			]
 		},
 		"debuggers": [
 			{
@@ -286,6 +346,11 @@
 				"command": "muTwo.workspace.delete",
 				"category": "Mu 2",
 				"title": "Delete Workspace"
+			},
+			{
+				"command": "muTwo.workspace.changeBoardAssociation",
+				"category": "Mu 2",
+				"title": "Change Board Association"
 			},
 			{
 				"command": "muTwo.workspace.restoreToInitial",
@@ -500,8 +565,89 @@
 				"category": "Mu 2",
 				"title": "Open Mu 2 Shell Terminal",
 				"icon": "$(terminal)"
+			},
+			{
+				"command": "muTwo.projects.refresh",
+				"category": "CircuitPython Projects",
+				"title": "Refresh Projects",
+				"icon": "$(refresh)"
+			},
+			{
+				"command": "muTwo.projects.toggleSelection",
+				"category": "CircuitPython Projects",
+				"title": "Toggle Project Selection"
+			},
+			{
+				"command": "muTwo.projects.resumeSelected",
+				"category": "CircuitPython Projects",
+				"title": "Resume Selected Project",
+				"icon": "$(play)"
+			},
+			{
+				"command": "muTwo.projects.saveCurrentAs",
+				"category": "CircuitPython Projects",
+				"title": "Save Current as Project",
+				"icon": "$(save)"
+			},
+			{
+				"command": "muTwo.projects.clearSelections",
+				"category": "CircuitPython Projects",
+				"title": "Clear All Selections",
+				"icon": "$(clear-all)"
+			},
+			{
+				"command": "muTwo.projects.generateRequirements",
+				"category": "CircuitPython Projects",
+				"title": "Generate requirements.txt from Workspace",
+				"icon": "$(file-text)"
+			},
+			{
+				"command": "muTwo.projects.installFromRequirements",
+				"category": "CircuitPython Projects",
+				"title": "Install Libraries from requirements.txt",
+				"icon": "$(cloud-download)"
+			},
+			{
+				"command": "muTwo.library.refresh",
+				"category": "CircuitPython Libraries",
+				"title": "Refresh Libraries",
+				"icon": "$(refresh)"
+			},
+			{
+				"command": "muTwo.library.install",
+				"category": "CircuitPython Libraries",
+				"title": "Install Library"
+			},
+			{
+				"command": "muTwo.library.remove",
+				"category": "CircuitPython Libraries",
+				"title": "Remove Library"
+			},
+			{
+				"command": "muTwo.library.downloadBundle",
+				"category": "CircuitPython Libraries",
+				"title": "Download CircuitPython Bundle",
+				"icon": "$(cloud-download)"
+			},
+			{
+				"command": "muTwo.library.search",
+				"category": "CircuitPython Libraries",
+				"title": "Search Libraries",
+				"icon": "$(search)"
+			},
+			{
+				"command": "muTwo.library.info",
+				"category": "CircuitPython Libraries",
+				"title": "Show Library Information"
 			}
 		],
+		"configurationDefaults": {
+			"[python]": {
+				"python.analysis.diagnosticSeverityOverrides": {
+					"reportShadowedImports": "none"
+				}
+			}
+		},
 		"configuration": {
 			"title": "Mu 2 Editor",
 			"properties": {

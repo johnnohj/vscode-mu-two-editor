@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ReplViewProvider } from '../providers/views/replViewProvider';
-import { EditorPanelProvider } from '../providers/views/editorPanelProvider';
+import { EditorReplPanelProvider } from '../providers/views/webviewPanelProvider';
 import { PythonEnvManager } from '../execution/pythonEnvManager';
 import { MuTwoLanguageClient } from '../devices/core/client';
 import { DeviceManager } from '../devices/core/deviceManager';
@@ -38,7 +38,7 @@ export interface ExtensionState {
 	pythonDependenciesSafe: boolean; // If false, prevent Python-dependent operations
 
 	viewProvider?: ReplViewProvider;
-	editorPanelProvider?: EditorPanelProvider;
+	webviewPanelProvider?: EditorReplPanelProvider;
 	pythonEnvManager?: PythonEnvManager;
 	languageClient?: MuTwoLanguageClient;
 	debugManager?: CircuitPythonDebugManager;
@@ -343,7 +343,7 @@ export class ExtensionStateManager implements vscode.Disposable {
 		// Dispose all components that support disposal
 		const componentsToDispose = [
 			'viewProvider',
-			'editorPanelProvider',
+			'webviewPanelProvider',
 			'pythonEnvManager',
 			'languageClient',
 			'debugManager',

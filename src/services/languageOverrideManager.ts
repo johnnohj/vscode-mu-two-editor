@@ -330,6 +330,7 @@ export class LanguageOverrideManager {
 			reportUndefinedVariable: "error",
 			reportUnboundVariable: "warning",
 			reportGeneralTypeIssues: "warning",
+			reportShadowedImports: false,  // CircuitPython requires code.py/main.py as entry points
 
 			// CircuitPython has different module structure
 			reportImportCycles: false,

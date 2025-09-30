@@ -82,7 +82,7 @@ export async function activate(context: vscode.ExtensionContext) {
             logger.info('EXTENSION', '✅ SimpleCommands connected with ReplViewProvider');
         }
 
-        registerCommands(context);
+        registerCommands(context, boardManager);
         registerCircuitPythonLanguageFeatures(context);
 
         // Step 5: Set up lazy loading
@@ -189,7 +189,7 @@ async function fullActivation(context: vscode.ExtensionContext, activationState:
  */
 async function finalizeActivation(context: vscode.ExtensionContext) {
     // Step 1: Register commands
-    registerCommands(context, boardManager, services.cliProcessor);
+    registerCommands(context, boardManager);
 
     // Step 2: Set up lazy loading for optional services
     setupLazyLoading(context);

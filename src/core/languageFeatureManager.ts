@@ -3,7 +3,7 @@
 
 import * as vscode from 'vscode';
 import { getLogger } from '../utils/unifiedLogger';
-import { editorPanelProvider } from './componentManager';
+// import { webviewPanelProvider } from './componentManager';
 
 const logger = getLogger();
 
@@ -16,7 +16,8 @@ export function registerCircuitPythonLanguageFeatures(context: vscode.ExtensionC
     const pythonSelector: vscode.DocumentSelector = { language: 'python' };
 
     // Get existing services for integration
-    const languageServiceBridge = editorPanelProvider.getLanguageServiceBridge();
+    // TODO: Re-enable language service bridge after migration complete
+    const languageServiceBridge = null; // webviewPanelProvider.getLanguageServiceBridge();
     const moduleRegistry = getModuleRegistry();
     const boardDatabase = getBoardDatabase();
 

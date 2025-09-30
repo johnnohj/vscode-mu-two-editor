@@ -399,24 +399,68 @@ export class HardwareDrawerContent {
 
 	/**
 	 * Generate Serial tab content using VS Code WebView UI Toolkit
+	 * Compact horizontal layout for letterbox header
 	 */
 	getSerialTabContent(): string {
 		return `
-		<div class="serial-settings">
+		<div class="serial-settings-compact">
+			<vscode-dropdown id="serial-port" class="compact-dropdown">
+				<vscode-option value="">Auto-detect port</vscode-option>
+				<vscode-option value="COM3">COM3</vscode-option>
+				<vscode-option value="COM4">COM4</vscode-option>
+			</vscode-dropdown>
+			<vscode-dropdown id="baud-rate" class="compact-dropdown">
+				<vscode-option value="115200" selected>115200</vscode-option>
+				<vscode-option value="9600">9600</vscode-option>
+				<vscode-option value="57600">57600</vscode-option>
+			</vscode-dropdown>
+			<vscode-button appearance="primary" class="connect-button-compact" onclick="toggleConnection()">
+				<span slot="start" class="connection-status codicon codicon-plug"></span>
+				Connect
+			</vscode-button>
+		</div>
+
+		<style>
+		.serial-settings-compact {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			flex-wrap: nowrap;
+		}
+
+		.compact-dropdown {
+			min-width: 120px;
+			max-width: 150px;
+		}
+
+		.connect-button-compact {
+			white-space: nowrap;
+		}
+
+		.connect-button-compact.connected {
+			background: var(--vscode-charts-green);
+		}
+
+		.connection-status {
+			font-size: 11px;
+		}
+		</style>
+
+		<div class="serial-settings-full" style="display: none;">
 			<vscode-divider role="separator"></vscode-divider>
 
 			<div class="section">
 				<h5>🔌 Connection</h5>
 				<div class="connection-controls">
 					<div class="form-group">
-						<vscode-dropdown id="serial-port">
+						<vscode-dropdown id="serial-port-full">
 							<vscode-option value="">Auto-detect</vscode-option>
 							<vscode-option value="COM3">COM3 - CircuitPython Device</vscode-option>
 							<vscode-option value="COM4">COM4 - USB Serial</vscode-option>
 						</vscode-dropdown>
 					</div>
 					<div class="form-group">
-						<vscode-dropdown id="baud-rate">
+						<vscode-dropdown id="baud-rate-full">
 							<vscode-option value="115200" selected>115200</vscode-option>
 							<vscode-option value="9600">9600</vscode-option>
 							<vscode-option value="19200">19200</vscode-option>

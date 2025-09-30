@@ -5,7 +5,6 @@ import * as vscode from 'vscode';
 import { getLogger } from '../utils/unifiedLogger';
 import { ExtensionStateManager } from '../utils/extensionStateManager';
 import { ReplViewProvider } from '../providers/views/replViewProvider';
-import { EditorPanelProvider } from '../providers/views/editorPanelProvider';
 import { EditorReplPanelProvider } from '../providers/views/webviewPanelProvider';
 import { CtpyDeviceFileSystemProvider } from '../workspace/filesystem/ctpyDeviceFSProvider'
 import { MuTwoWorkspaceManager } from '../workspace/workspaceManager';
@@ -13,13 +12,16 @@ import { ProjectManager } from '../workspace/projectManager';
 import { FileSaveTwiceHandler } from '../workspace/filesystem/saveTwiceHandler';
 import { PythonEnvManager } from '../execution/pythonEnvManager';
 import { BoardManager, IBoard } from '../devices/management/boardManager';
+import { WorkspaceProjectsProvider } from '../providers/views/workspaceProjectsProvider';
+import { LibraryManagerProvider } from '../providers/views/libraryManagerProvider';
 
 const logger = getLogger();
 
 // Component references that will be set during registration
 export let webviewViewProvider: ReplViewProvider;
-export let editorPanelProvider: EditorPanelProvider;
 export let webviewPanelProvider: EditorReplPanelProvider;
+export let workspaceProjectsProvider: WorkspaceProjectsProvider;
+export let libraryManagerProvider: LibraryManagerProvider;
 
 // Lazy-loaded components (fileSystemProvider now initialized early in activationManager)
 export let workspaceManager: MuTwoWorkspaceManager | null = null;
@@ -35,7 +37,6 @@ export function registerUIComponents(
     stateManager: ExtensionStateManager
 ): {
     webviewViewProvider: ReplViewProvider;
-    editorPanelProvider: EditorPanelProvider;
     webviewPanelProvider: EditorReplPanelProvider;
 } {
     logger.info('COMPONENTS', 'Registering UI components...');
@@ -53,23 +54,69 @@ export function registerUIComponents(
         )
     );
 
-    // Create editor panel provider
-    editorPanelProvider = new EditorPanelProvider(context);
-    stateManager.setComponent('editorPanelProvider', editorPanelProvider);
-    logger.info('COMPONENTS', 'Editor panel provider created for split view functionality');
-
     // Create webview panel provider for connected REPLs
     webviewPanelProvider = new EditorReplPanelProvider(context);
     stateManager.setComponent('webviewPanelProvider', webviewPanelProvider);
     logger.info('COMPONENTS', 'Webview panel provider created for connected REPL functionality');
 
+    // Set context variable to show the projects view in explorer
+    vscode.commands.executeCommand('setContext', 'workspaceHasProjectsFolder', true);
+    logger.info('COMPONENTS', 'UI components registered (projects view will be initialized with Python environment)');
+
+    // Note: Library manager provider will be registered separately after Python environment initialization
+
     logger.info('COMPONENTS', 'UI components registered');
 
     return {
         webviewViewProvider,
-        editorPanelProvider,
         webviewPanelProvider
     };
+}
+
+/**
+ * Register workspace projects provider after Python environment initialization
+ */
+export function registerWorkspaceProjectsProvider(
+    context: vscode.ExtensionContext,
+    pythonEnvManager: PythonEnvManager,
+    stateManager: ExtensionStateManager
+): void {
+    logger.info('COMPONENTS', 'Registering workspace projects provider...');
+
+    // Create workspace projects tree view provider
+    workspaceProjectsProvider = new WorkspaceProjectsProvider(context, pythonEnvManager.getBundleManager());
+    context.subscriptions.push(
+        vscode.window.createTreeView('muTwo.workspaceProjects', {
+            treeDataProvider: workspaceProjectsProvider,
+            showCollapseAll: false
+        })
+    );
+    stateManager.setComponent('workspaceProjectsProvider', workspaceProjectsProvider);
+
+    logger.info('COMPONENTS', 'Workspace projects provider registered');
+}
+
+/**
+ * Register library manager provider after Python environment initialization
+ */
+export function registerLibraryManager(
+    context: vscode.ExtensionContext,
+    pythonEnvManager: PythonEnvManager,
+    stateManager: ExtensionStateManager
+): void {
+    logger.info('COMPONENTS', 'Registering library manager provider...');
+
+    // Create library manager provider
+    libraryManagerProvider = new LibraryManagerProvider(context, pythonEnvManager);
+    context.subscriptions.push(
+        vscode.window.createTreeView('muTwo.libraryManager', {
+            treeDataProvider: libraryManagerProvider,
+            showCollapseAll: true
+        })
+    );
+    stateManager.setComponent('libraryManagerProvider', libraryManagerProvider);
+
+    logger.info('COMPONENTS', 'Library manager provider registered');
 }
 
 /**
@@ -119,10 +166,10 @@ export function getCircuitPythonDeviceProvider(): CtpyDeviceFileSystemProvider {
 /**
  * Get workspace manager (lazy-loaded)
  */
-export async function getWorkspaceManager(context: vscode.ExtensionContext): Promise<MuTwoWorkspaceManager> {
+export async function getWorkspaceManager(context: vscode.ExtensionContext, boardManager: BoardManager): Promise<MuTwoWorkspaceManager> {
     if (!workspaceManager) {
         logger.info('COMPONENTS', 'Lazy-loading workspace manager...');
-        workspaceManager = new MuTwoWorkspaceManager(context);
+        workspaceManager = new MuTwoWorkspaceManager(context, boardManager);
         logger.info('COMPONENTS', 'Workspace manager loaded successfully');
     }
     return workspaceManager;
@@ -157,11 +204,11 @@ export function getSaveTwiceHandler(
 }
 
 /**
- * Get existing EditorPanelProvider instance (created during UI component registration)
+ * Get existing EditorReplPanelProvider instance (created during UI component registration)
  */
-export async function getEditorPanelProvider(): Promise<EditorPanelProvider> {
-    if (!editorPanelProvider) {
-        throw new Error('EditorPanelProvider not initialized. This should be created during UI component registration.');
+export async function getEditorPanelProvider(): Promise<EditorReplPanelProvider> {
+    if (!webviewPanelProvider) {
+        throw new Error('EditorReplPanelProvider not initialized. This should be created during UI component registration.');
     }
-    return editorPanelProvider;
+    return webviewPanelProvider;
 }

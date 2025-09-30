@@ -9,7 +9,7 @@ import { getLogger } from './unifiedLogger';
 const logger = getLogger();
 
 export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): Promise<string | null> {
-    const venvPath = vscode.Uri.joinPath(context.globalStorageUri, 'venv').fsPath;
+    const venvPath = vscode.Uri.joinPath(context.extensionUri, 'venv').fsPath;
 
     // Initialize venv ready state as not ready
     const { ReplViewProvider } = await import('../providers/views/replViewProvider');
@@ -18,8 +18,8 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
     try {
         // Check if venv already exists using VS Code filesystem API
         const pythonExe = process.platform === 'win32'
-            ? vscode.Uri.joinPath(context.globalStorageUri, 'venv', 'Scripts', 'python.exe')
-            : vscode.Uri.joinPath(context.globalStorageUri, 'venv', 'bin', 'python');
+            ? vscode.Uri.joinPath(context.extensionUri, 'venv', 'Scripts', 'python.exe')
+            : vscode.Uri.joinPath(context.extensionUri, 'venv', 'bin', 'python');
 
         await vscode.workspace.fs.stat(pythonExe);
 
@@ -75,8 +75,8 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
 
                             // Check if venv was actually created by verifying the Python executable
                             const pythonExe = process.platform === 'win32'
-                                ? vscode.Uri.joinPath(context.globalStorageUri, 'venv', 'Scripts', 'python.exe')
-                                : vscode.Uri.joinPath(context.globalStorageUri, 'venv', 'bin', 'python');
+                                ? vscode.Uri.joinPath(context.extensionUri, 'venv', 'Scripts', 'python.exe')
+                                : vscode.Uri.joinPath(context.extensionUri, 'venv', 'bin', 'python');
 
                             vscode.workspace.fs.stat(pythonExe).then(
                                 async () => {
@@ -108,8 +108,8 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
 
                         // Check if venv was created anyway
                         const pythonExe = process.platform === 'win32'
-                            ? vscode.Uri.joinPath(context.globalStorageUri, 'venv', 'Scripts', 'python.exe')
-                            : vscode.Uri.joinPath(context.globalStorageUri, 'venv', 'bin', 'python');
+                            ? vscode.Uri.joinPath(context.extensionUri, 'venv', 'Scripts', 'python.exe')
+                            : vscode.Uri.joinPath(context.extensionUri, 'venv', 'bin', 'python');
 
                         vscode.workspace.fs.stat(pythonExe).then(
                             async () => {

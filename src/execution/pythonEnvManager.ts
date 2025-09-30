@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { getLogger } from '../utils/unifiedLogger';
+import { CircuitPythonBundleManager } from '../workspace/integration/bundleManager';
 
 const logger = getLogger();
 
@@ -30,6 +31,7 @@ export interface PythonEnvironmentInfo {
 export class PythonEnvManager {
 	private context: vscode.ExtensionContext;
 	private muTwoEnvPath?: string;
+	private bundleManager?: CircuitPythonBundleManager;
 	private readonly expectedPackages = [
 		'setuptools',
 		'circup',
@@ -65,6 +67,9 @@ export class PythonEnvManager {
 				// Optional: Verify expected packages are present (info only)
 				await this.reportPackageStatus();
 
+				// Initialize and verify CircuitPython bundle
+				await this.initializeBundleManager();
+
 			} else {
 				logger.warn('PYTHON_ENV', 'No valid Python environment detected. Extension will run with limited Python features.');
 				this.muTwoEnvPath = undefined;
@@ -82,6 +87,13 @@ export class PythonEnvManager {
 	 */
 	getCurrentPythonPath(): string | undefined {
 		return this.muTwoEnvPath;
+	}
+
+	/**
+	 * Get the bundle manager instance
+	 */
+	getBundleManager(): CircuitPythonBundleManager | undefined {
+		return this.bundleManager;
 	}
 
 	/**
@@ -123,8 +135,8 @@ export class PythonEnvManager {
 
 		// Check standard locations where MuTwoTerminalProfile creates venvs
 		const standardPaths = [
-			vscode.Uri.joinPath(this.context.globalStorageUri, 'python_env').fsPath, // New location
-			vscode.Uri.joinPath(this.context.globalStorageUri, 'mu2-ext').fsPath,     // Legacy location
+			vscode.Uri.joinPath(this.context.extensionUri, 'venv').fsPath,
+
 		];
 
 		for (const envPath of standardPaths) {
@@ -382,6 +394,72 @@ export class PythonEnvManager {
 			);
 		} catch {
 			return [];
+		}
+	}
+
+	/**
+	 * Initialize and verify CircuitPython bundle
+	 */
+	private async initializeBundleManager(): Promise<void> {
+		if (!this.muTwoEnvPath) {
+			logger.warn('BUNDLE', 'Cannot initialize bundle manager: Python environment path not available');
+			return;
+		}
+
+		try {
+			logger.info('BUNDLE', 'Initializing CircuitPython bundle manager...');
+
+			// Create bundle manager instance
+			this.bundleManager = new CircuitPythonBundleManager(this.context);
+
+			// Set Python path for bundle operations
+			if (this.muTwoEnvPath) {
+				const pythonPath = this.getCurrentPythonPath();
+				if (pythonPath) {
+					this.bundleManager.setPythonPath(pythonPath);
+				}
+			}
+
+			await this.bundleManager.initialize();
+
+			// Check if bundle needs setup (non-blocking)
+			const needsSetup = await this.bundleManager.shouldRefreshBundle();
+
+			if (needsSetup) {
+				logger.info('BUNDLE', 'CircuitPython bundle needs setup - will prompt user when Library Manager is accessed');
+
+				// Show non-intrusive message
+				const setupPromise = vscode.window.showInformationMessage(
+					'CircuitPython library bundle is not set up. Libraries will be available after setup.',
+					'Setup Now',
+					'Setup Later'
+				).then(choice => {
+					if (choice === 'Setup Now') {
+						return this.bundleManager.downloadAndInstallBundle().then(success => {
+							if (success) {
+								vscode.window.showInformationMessage('CircuitPython bundle setup complete! All libraries are now available.');
+								logger.info('BUNDLE', 'CircuitPython bundle setup completed successfully');
+							} else {
+								vscode.window.showWarningMessage('Bundle setup failed. You can retry from the Library Manager.');
+								logger.warn('BUNDLE', 'CircuitPython bundle setup failed');
+							}
+						});
+					} else {
+						logger.info('BUNDLE', 'User chose to defer bundle setup');
+					}
+				});
+
+				// Don't wait for user response - continue activation
+				setupPromise.catch(error => {
+					logger.warn('BUNDLE', `Bundle setup promise failed: ${error}`);
+				});
+			} else {
+				logger.info('BUNDLE', 'CircuitPython bundle is up to date');
+			}
+
+		} catch (error) {
+			logger.error('BUNDLE', `Failed to initialize bundle manager: ${error}`);
+			// Don't show error to user as this is not critical for core functionality
 		}
 	}
 

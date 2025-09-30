@@ -9,10 +9,10 @@
 ## FUTURE IMPROVEMENTS
 
 - (circup) When on 'Global' tab, dedicated library view GUI in the Explorer tab area that:
-   - Shows currently-installed libraries
+   - Shows currently-installed libraries (should be the full bundle in global)
    - Shows installed version, bold red if update available
    - has blank input line
-   - has 'Install' button - if version entered in input line, installs/adds that version to global lib, else installs latest
+   - has 'Install' button - installs/updates that library to global lib
 
 - (circup) When on 'Workspace' tab, dedicated library view GUI in the Explorer tab area that:
    - Shows current project 'code.py' local-disk equivalent path+name

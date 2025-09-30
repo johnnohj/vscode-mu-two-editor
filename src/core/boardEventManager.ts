@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import { getLogger } from '../utils/unifiedLogger';
 import { BoardManager, IBoard } from '../devices/management/boardManager';
-import { webviewViewProvider, editorPanelProvider } from './componentManager';
+import { webviewViewProvider, webviewPanelProvider } from './componentManager';
 
 const logger = getLogger();
 
@@ -131,12 +131,13 @@ export function notifyWebviewsOfBoardChange(boardManager: BoardManager): void {
         });
     }
 
-    if (editorPanelProvider && typeof editorPanelProvider.sendMessage === 'function') {
-        editorPanelProvider.sendMessage({
-            type: 'boardsUpdated',
-            data: boardList
-        });
-    }
+    // TODO: Re-enable after webviewPanelProvider has sendMessage method
+    // if (webviewPanelProvider && typeof webviewPanelProvider.sendMessage === 'function') {
+    //     webviewPanelProvider.sendMessage({
+    //         type: 'boardsUpdated',
+    //         data: boardList
+    //     });
+    // }
 }
 
 /**
