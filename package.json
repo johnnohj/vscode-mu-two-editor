@@ -106,28 +106,28 @@
 				},
 				{
 					"command": "muTwo.editor.showPlotterHeader",
-					"when": "activeWebviewPanelId == 'muTwo.connectedPlotter' && muTwo.connectedPlotter.headerCollapsed == true",
+					"when": "activeWebviewPanelId == 'muTwo.connected*' && muTwo.connectedPlotter.headerCollapsed == true",
 					"icon": "$(chevron-down)",
 					"title": "Show Panel Header",
 					"group": "navigation"
 				},
 				{
 					"command": "muTwo.editor.hidePlotterHeader",
-					"when": "activeWebviewPanelId == 'muTwo.connectedPlotter' && muTwo.connectedPlotter.headerCollapsed != true",
+					"when": "activeWebviewPanelId == 'muTwo.connected*' && muTwo.connectedPlotter.headerCollapsed != true",
 					"icon": "$(chevron-up)",
 					"title": "Hide Panel Header",
 					"group": "navigation"
 				},
 				{
 					"command": "muTwo.editor.showHardwarePanel",
-					"when": "activeWebviewPanelId == 'muTwo.connectedRepl' && muTwo.connectedHardware.exists != true",
+					"when": "activeWebviewPanelId == 'muTwo.connected*' && muTwo.connectedHardware.exists != true",
 					"icon": "$(circuit-board)",
 					"title": "Show Hardware Simulator",
 					"group": "navigation"
 				},
 				{
 					"command": "muTwo.editor.showPlotterPanel",
-					"when": "activeWebviewPanelId == 'muTwo.connectedRepl' && muTwo.connectedPlotter.exists != true",
+					"when": "activeWebviewPanelId == 'muTwo.connected*' && muTwo.connectedPlotter.exists != true",
 					"icon": "$(graph)",
 					"title": "Show Data Plotter",
 					"group": "navigation"
@@ -139,9 +139,6 @@
 				},
 				{
 					"command": "muTwo.workspace.open"
-				},
-				{
-					"command": "muTwo.showWelcome"
 				},
 				{
 					"command": "muTwo.workspace.list"
@@ -316,11 +313,6 @@
 				"command": "muTwo.workspace.open",
 				"category": "Mu 2",
 				"title": "Open Mu 2 Workspace"
-			},
-			{
-				"command": "muTwo.showWelcome",
-				"category": "Mu 2",
-				"title": "Show Mu 2 Welcome"
 			},
 			{
 				"command": "muTwo.showView",
@@ -950,10 +942,10 @@
 		"compile": "npm run build-extension",
 		"watch": "npm run dev-extension",
 		"test": "npm run test:compile && vscode-test",
-		"test:compile": "tsc -p test/tsconfig.json",
+		"test:compile": "tsc -p test/tsconfig.integration-only.json",
 		"test:watch": "npm run test:compile -- --watch",
 		"test:unit": "vscode-test --testGlob='**/test/unit/**/*.test.js'",
-		"test:integration": "npm run test:compile && vscode-test --testGlob='**/test/integration/**/*.test.js'",
+		"test:integration": "npm run test:compile && vscode-test",
 		"test:all": "npm run test:compile && vscode-test",
 		"test:coverage": "nyc npm run test:unit"
 	},

@@ -145,21 +145,53 @@ function registerEditorCommands(context: vscode.ExtensionContext): void {
     // Show/hide panel commands fired by VS Code when users click contributed buttons
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.editor.showPanel', async () => {
+            logger.info('COMMANDS', 'muTwo.editor.showPanel command triggered');
             const activeEditor = vscode.window.activeTextEditor;
 
-            if (activeEditor && activeEditor.document.languageId === 'python' && webviewPanelProvider) {
-                await webviewPanelProvider.createOrShowPanel(activeEditor);
+            if (!activeEditor) {
+                logger.warn('COMMANDS', 'No active editor');
+                return;
             }
+
+            if (activeEditor.document.languageId !== 'python') {
+                logger.warn('COMMANDS', `Active editor is not Python (${activeEditor.document.languageId})`);
+                return;
+            }
+
+            if (!webviewPanelProvider) {
+                logger.error('COMMANDS', 'webviewPanelProvider not available');
+                vscode.window.showErrorMessage('Mu 2: Panel provider not initialized');
+                return;
+            }
+
+            logger.info('COMMANDS', 'Creating/showing panel for active editor');
+            await webviewPanelProvider.createOrShowPanel(activeEditor);
         })
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.editor.hidePanel', () => {
+            logger.info('COMMANDS', 'muTwo.editor.hidePanel command triggered');
             const activeEditor = vscode.window.activeTextEditor;
 
-            if (activeEditor && activeEditor.document.languageId === 'python' && webviewPanelProvider) {
-                webviewPanelProvider.hidePanel(activeEditor);
+            if (!activeEditor) {
+                logger.warn('COMMANDS', 'No active editor');
+                return;
             }
+
+            if (activeEditor.document.languageId !== 'python') {
+                logger.warn('COMMANDS', `Active editor is not Python (${activeEditor.document.languageId})`);
+                return;
+            }
+
+            if (!webviewPanelProvider) {
+                logger.error('COMMANDS', 'webviewPanelProvider not available');
+                vscode.window.showErrorMessage('Mu 2: Panel provider not initialized');
+                return;
+            }
+
+            logger.info('COMMANDS', 'Hiding panel for active editor');
+            webviewPanelProvider.hidePanel(activeEditor);
         })
     );
 
@@ -908,7 +940,7 @@ async function setupPythonEnvironmentCommand(context: vscode.ExtensionContext): 
         const componentRegistry = ComponentRegistry.getInstance(context);
 
         // Check if already in progress
-        if (componentRegistry.tryGetComponent('pythonEnvManager')) {
+        if (componentRegistry.tryGet('pythonEnvManager')) {
             vscode.window.showInformationMessage('Python environment setup is already in progress or completed.');
             return;
         }
@@ -931,9 +963,8 @@ async function setupPythonEnvironmentCommand(context: vscode.ExtensionContext): 
         }
 
     } catch (error) {
-        const componentRegistry = ComponentRegistry.getInstance(context);
         const errorMessage = error instanceof Error ? error.message : String(error);
-        componentRegistry.setPythonVenvFailed(errorMessage);
+        logger.error('COMMANDS', 'Failed to setup Python environment', error);
 
         vscode.window.showErrorMessage(
             `Failed to setup Python environment: ${errorMessage}`,

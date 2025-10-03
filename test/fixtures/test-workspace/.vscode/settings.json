@@ -1,5 +1,5 @@
 {
-	"python.defaultInterpreterPath": "c:\\Users\\jef\\dev\\vscode-mu-two-editor\\.vscode-test\\user-data\\User\\globalStorage\\mu-two.mu-two-editor\\mu-two-python-env\\Scripts\\python.exe",
+	"python.defaultInterpreterPath": "c:\\Users\\jef\\dev\\vscode-mu-two-editor\\venv\\Scripts\\python.exe",
 	"python.terminal.activateEnvironment": false,
 	"muTwo.serial.globalPermission": true,
 	"muTwo.autoDownloadGuides": false,

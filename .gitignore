@@ -104,6 +104,11 @@ public
 out/
 *.vsix
 
+# Prevent compiled test files in source
+src/**/*.js
+src/**/*.js.map
+!src/**/*.test.js
+
 .vscode-test
 
 # VS Code settings

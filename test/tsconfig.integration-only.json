@@ -5,23 +5,23 @@
 		"outDir": "../out/test",
 		"lib": ["es2020"],
 		"sourceMap": true,
-		"rootDir": "../",
-		"strict": true,
-		"esModuleInterop": true,
+		"rootDir": "./",
+		"strict": false,
 		"skipLibCheck": true,
+		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true,
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true
 	},
 	"include": [
-		"./unit/**/*",
-		"./integration/**/*",
-		"./helpers/**/*"
+		"./integration/**/*"
 	],
 	"exclude": [
 		"../node_modules",
 		"../dist",
-		"../out"
+		"../out",
+		"../src",
+		"./unit/**/*"
 	]
 }

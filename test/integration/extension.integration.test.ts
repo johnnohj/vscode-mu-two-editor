@@ -1,10 +1,19 @@
+/**
+ * Basic extension integration tests
+ *
+ * Tests extension metadata, package.json configuration, and basic activation.
+ * For detailed activation/setup tests, see activation-setup.test.ts
+ */
+
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 
-suite('Extension Integration Tests', () => {
+suite('Extension Metadata & Configuration Tests', () => {
 	let extension: vscode.Extension<any>;
 
-	suiteSetup(async () => {
+	suiteSetup(async function() {
+		this.timeout(30000); // 30 seconds for activation
+
 		// Get the extension
 		extension = vscode.extensions.getExtension('mu-two.mu-two-editor')!;
 
@@ -12,9 +21,12 @@ suite('Extension Integration Tests', () => {
 		if (!extension.isActive) {
 			await extension.activate();
 		}
+
+		// Wait for activation to stabilize
+		await new Promise(resolve => setTimeout(resolve, 2000));
 	});
 
-	test('Extension should activate successfully', () => {
+	test('Extension should be available and activated', () => {
 		assert.ok(extension, 'Extension should be available');
 		assert.ok(extension.isActive, 'Extension should be activated');
 	});

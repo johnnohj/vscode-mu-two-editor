@@ -47,13 +47,13 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
             notifyReplVenvProgress(0, "Creating virtual environment...");
 
             try {
-                // Create a simple task for venv creation
+                // Create a simple task for venv creation with pip included
                 const venvTask = new vscode.Task(
                     { type: 'shell' },
                     vscode.TaskScope.Global,
                     'Create Python Virtual Environment',
                     'Mu Two Extension',
-                    new vscode.ShellExecution('python', ['-m', 'venv', venvPath])
+                    new vscode.ShellExecution('python', ['-m', 'venv', '--upgrade-deps', venvPath])
                 );
 					 venvTask.presentationOptions = {
 						  echo: true,
@@ -80,10 +80,21 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
                                 async () => {
                                     // Success - Python executable exists
                                     logger.info('VENV', `✅ Python venv created successfully at: ${venvPath}`);
-                                    progress.report({ increment: 100, message: "Python environment ready!" });
+                                    progress.report({ increment: 40, message: "Installing dependencies..." });
+                                    notifyReplVenvProgress(40, "Installing dependencies...");
 
-                                    // Send final progress to REPL webview
-                                    notifyReplVenvProgress(100, "Python environment ready!");
+                                    // Install requirements.txt
+                                    const installed = await installRequirements(pythonExe.fsPath, context);
+
+                                    if (installed) {
+                                        progress.report({ increment: 100, message: "Python environment ready!" });
+                                        notifyReplVenvProgress(100, "Python environment ready!");
+                                        logger.info('VENV', `✅ Dependencies installed successfully`);
+                                    } else {
+                                        progress.report({ increment: 100, message: "Python environment ready (check logs)" });
+                                        notifyReplVenvProgress(100, "Python environment ready");
+                                        logger.warn('VENV', `⚠️ Some dependencies may not have installed - check logs`);
+                                    }
 
                                     // Set venv ready state for REPL
                                     const { ReplViewProvider } = await import('../providers/views/replViewProvider');
@@ -101,6 +112,7 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
                     });
 
                     // Fallback timeout in case task event doesn't fire
+                    // Increased to 60 seconds for slow systems or when --upgrade-deps downloads pip
                     setTimeout(() => {
                         disposable.dispose();
 
@@ -110,10 +122,21 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
                         vscode.workspace.fs.stat(pythonExe).then(
                             async () => {
                                 logger.info('VENV', `✅ Python venv created successfully (detected via timeout): ${venvPath}`);
-                                progress.report({ increment: 100, message: "Python environment ready!" });
+                                progress.report({ increment: 40, message: "Installing dependencies..." });
+                                notifyReplVenvProgress(40, "Installing dependencies...");
 
-                                // Send final progress to REPL webview
-                                notifyReplVenvProgress(100, "Python environment ready!");
+                                // Install requirements.txt
+                                const installed = await installRequirements(pythonExe.fsPath, context);
+
+                                if (installed) {
+                                    progress.report({ increment: 100, message: "Python environment ready!" });
+                                    notifyReplVenvProgress(100, "Python environment ready!");
+                                    logger.info('VENV', `✅ Dependencies installed successfully`);
+                                } else {
+                                    progress.report({ increment: 100, message: "Python environment ready (check logs)" });
+                                    notifyReplVenvProgress(100, "Python environment ready");
+                                    logger.warn('VENV', `⚠️ Some dependencies may not have installed - check logs`);
+                                }
 
                                 // Set venv ready state for REPL
                                 const { ReplViewProvider } = await import('../providers/views/replViewProvider');
@@ -126,7 +149,7 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
                                 resolve(null);
                             }
                         );
-                    }, 10000); // 10 second timeout
+                    }, 60000); // 60 second timeout for venv creation with --upgrade-deps
                 });
 
             } catch (error) {
@@ -232,5 +255,99 @@ function notifyReplVenvProgress(progress: number, message: string): void {
         }
     } catch (error) {
         logger.debug('VENV', 'Failed to notify REPL webview of venv progress:', error);
+    }
+}
+
+/**
+ * Install requirements from extension's requirements.txt file
+ */
+async function installRequirements(pythonPath: string, context: vscode.ExtensionContext): Promise<boolean> {
+    try {
+        const resourceLocator = getResourceLocator();
+
+        // Get requirements.txt from extension's data directory
+        // Try multiple locations for dev vs packaged extension:
+        // 1. dist/data/requirements.txt (production build)
+        // 2. data/requirements.txt (packaged extension)
+        // 3. src/data/requirements.txt (development mode)
+        let requirementsPath = vscode.Uri.joinPath(context.extensionUri, 'dist', 'data', 'requirements.txt');
+
+        logger.info('VENV', `Checking for requirements.txt at: ${requirementsPath.fsPath}`);
+
+        try {
+            await vscode.workspace.fs.stat(requirementsPath);
+            logger.info('VENV', `✅ Found requirements.txt at: ${requirementsPath.fsPath}`);
+        } catch (error) {
+            logger.warn('VENV', `⚠️ requirements.txt not found at ${requirementsPath.fsPath}`);
+            logger.info('VENV', `Trying alternate location: data/requirements.txt`);
+            // If dist/data doesn't exist, try just data/ (packaged extension)
+            requirementsPath = vscode.Uri.joinPath(context.extensionUri, 'data', 'requirements.txt');
+
+            try {
+                await vscode.workspace.fs.stat(requirementsPath);
+                logger.info('VENV', `✅ Found requirements.txt at alternate location: ${requirementsPath.fsPath}`);
+            } catch (altError) {
+                logger.warn('VENV', `⚠️ requirements.txt not found at ${requirementsPath.fsPath}`);
+                logger.info('VENV', `Trying development location: src/data/requirements.txt`);
+                // If data/ doesn't exist, try src/data/ (development mode)
+                requirementsPath = vscode.Uri.joinPath(context.extensionUri, 'src', 'data', 'requirements.txt');
+
+                try {
+                    await vscode.workspace.fs.stat(requirementsPath);
+                    logger.info('VENV', `✅ Found requirements.txt at development location: ${requirementsPath.fsPath}`);
+                } catch (devError) {
+                    logger.error('VENV', `❌ requirements.txt not found at any location`);
+                    logger.error('VENV', `   Tried: dist/data, data, src/data`);
+                    throw new Error(`requirements.txt not found in dist/data, data, or src/data directories`);
+                }
+            }
+        }
+
+        logger.info('VENV', `Installing requirements from: ${requirementsPath.fsPath}`);
+
+        // Use child_process.spawn for reliable completion detection
+        // Tasks API onDidEndTaskProcess event doesn't always fire reliably
+        return new Promise<boolean>((resolve) => {
+            const { spawn } = require('child_process');
+            const childProcess = spawn(pythonPath, ['-m', 'pip', 'install', '-r', requirementsPath.fsPath], {
+                stdio: 'pipe',
+                env: { ...process.env }
+            });
+
+            let stdout = '';
+            let stderr = '';
+
+            childProcess.stdout?.on('data', (data: Buffer) => {
+                const output = data.toString();
+                stdout += output;
+                // Log progress for long-running installs
+                if (output.includes('Collecting') || output.includes('Installing')) {
+                    logger.debug('VENV', output.trim());
+                }
+            });
+
+            childProcess.stderr?.on('data', (data: Buffer) => {
+                stderr += data.toString();
+            });
+
+            childProcess.on('close', (code: number) => {
+                if (code === 0) {
+                    logger.info('VENV', `✅ Requirements installed successfully`);
+                    resolve(true);
+                } else {
+                    logger.warn('VENV', `⚠️ Requirements installation completed with exit code: ${code}`);
+                    logger.warn('VENV', `   Error output: ${stderr}`);
+                    resolve(false);
+                }
+            });
+
+            childProcess.on('error', (error: Error) => {
+                logger.error('VENV', `❌ Failed to spawn pip install:`, error);
+                resolve(false);
+            });
+        });
+    } catch (error) {
+        logger.error('VENV', `❌ Failed to install requirements:`, error);
+        return false;
     }
 }

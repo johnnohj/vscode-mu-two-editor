@@ -57,10 +57,10 @@ export class CircuitPythonBundleManager {
     public async initialize(): Promise<void> {
         // Set up persistent resources path using ResourceLocator
         const resourceLocator = getResourceLocator();
-        const configPath = resourceLocator.getConfigPath();
-        this.resourcesPath = configPath.fsPath;
+        const resourcesPath = resourceLocator.getResourcesPath();
+        this.resourcesPath = resourcesPath.fsPath;
 
-        await vscode.workspace.fs.createDirectory(configPath);
+        await vscode.workspace.fs.createDirectory(resourcesPath);
         this.logger.info('BUNDLE', `Resources path initialized: ${this.resourcesPath}`);
 
         // We'll determine the bundle path dynamically when needed
@@ -409,7 +409,7 @@ export class CircuitPythonBundleManager {
     private async generateModulesList(): Promise<string[]> {
         try {
             this.logger.info('BUNDLE', 'Discovering CircuitPython modules using circup...');
-            const result = await this.runPythonCommand(['-m', 'circup', 'bundle-show', '--modules']);
+            const result = await this.runCircupCommand(['bundle-show', '--modules']);
 
             // Parse the output - filter out empty lines and comments
             const modules = result
@@ -471,8 +471,8 @@ export class CircuitPythonBundleManager {
             const modulesJsonPath = vscode.Uri.joinPath(vscode.Uri.file(this.bundlePath), 'ctpyBundleModules.json');
 
             // Use circup to install all modules to the bundle directory
-            await this.runPythonCommand([
-                '-m', 'circup', 'install',
+            await this.runCircupCommand([
+                'install',
                 '-r', modulesJsonPath.fsPath,
                 '--path', this.bundlePath
             ]);
@@ -495,7 +495,7 @@ export class CircuitPythonBundleManager {
 
         return new Promise((resolve, reject) => {
             const { spawn } = require('child_process');
-            const process = spawn(this.pythonPath, args, {
+            const childProcess = spawn(this.pythonPath, args, {
                 stdio: 'pipe',
                 env: { ...process.env }
             });
@@ -503,15 +503,15 @@ export class CircuitPythonBundleManager {
             let stdout = '';
             let stderr = '';
 
-            process.stdout?.on('data', (data: Buffer) => {
+            childProcess.stdout?.on('data', (data: Buffer) => {
                 stdout += data.toString();
             });
 
-            process.stderr?.on('data', (data: Buffer) => {
+            childProcess.stderr?.on('data', (data: Buffer) => {
                 stderr += data.toString();
             });
 
-            process.on('close', (code: number) => {
+            childProcess.on('close', (code: number) => {
                 if (code === 0) {
                     resolve(stdout);
                 } else {
@@ -519,7 +519,7 @@ export class CircuitPythonBundleManager {
                 }
             });
 
-            process.on('error', (error: Error) => {
+            childProcess.on('error', (error: Error) => {
                 reject(error);
             });
         });
@@ -530,6 +530,51 @@ export class CircuitPythonBundleManager {
      */
     private async runPythonScript(script: string): Promise<string> {
         return this.runPythonCommand(['-c', script]);
+    }
+
+    /**
+     * Run circup command using circup.exe executable
+     * Circup must be called as an executable, not as a Python module (-m circup doesn't work)
+     */
+    private async runCircupCommand(args: string[]): Promise<string> {
+        if (!this.pythonPath) {
+            throw new Error('Python path not available');
+        }
+
+        // Get circup executable path from venv Scripts directory
+        const venvScriptsPath = this.pythonPath.replace(/python\.exe$/, '');
+        const circupPath = venvScriptsPath + 'circup.exe';
+
+        return new Promise((resolve, reject) => {
+            const { spawn } = require('child_process');
+            const childProcess = spawn(circupPath, args, {
+                stdio: 'pipe',
+                env: { ...process.env }
+            });
+
+            let stdout = '';
+            let stderr = '';
+
+            childProcess.stdout?.on('data', (data: Buffer) => {
+                stdout += data.toString();
+            });
+
+            childProcess.stderr?.on('data', (data: Buffer) => {
+                stderr += data.toString();
+            });
+
+            childProcess.on('close', (code: number) => {
+                if (code === 0) {
+                    resolve(stdout);
+                } else {
+                    reject(new Error(`Circup command failed (${code}): ${stderr}`));
+                }
+            });
+
+            childProcess.on('error', (error: Error) => {
+                reject(error);
+            });
+        });
     }
 
     /**
@@ -585,6 +630,14 @@ export class CircuitPythonBundleManager {
     public async refreshModulesList(): Promise<boolean> {
         try {
             await this.ensureCircupInstalled();
+
+            // Ensure bundlePath is set for saving internal modules list
+            if (!this.bundlePath) {
+                this.bundlePath = await this.getBundleInstallPath();
+                if (!this.bundlePath) {
+                    throw new Error('Failed to determine bundle installation path');
+                }
+            }
 
             // Get current modules from circup
             const newModules = await this.generateModulesList();
@@ -693,7 +746,7 @@ export class CircuitPythonBundleManager {
      */
     public async installLibraryWithCircup(libraryName: string, targetPath: string): Promise<boolean> {
         try {
-            await this.runPythonCommand(['-m', 'circup', '--path', targetPath, 'install', libraryName]);
+            await this.runCircupCommand(['--path', targetPath, 'install', libraryName]);
             this.logger.info('BUNDLE', `Installed library ${libraryName} to ${targetPath} using circup`);
             return true;
         } catch (error) {
@@ -704,7 +757,7 @@ export class CircuitPythonBundleManager {
 
     public async updateLibrariesWithCircup(targetPath: string): Promise<boolean> {
         try {
-            await this.runPythonCommand(['-m', 'circup', '--path', targetPath, 'update', '--all']);
+            await this.runCircupCommand(['--path', targetPath, 'update', '--all']);
             this.logger.info('BUNDLE', `Updated all libraries in ${targetPath} using circup`);
             return true;
         } catch (error) {
@@ -893,8 +946,8 @@ export class CircuitPythonBundleManager {
             await vscode.workspace.fs.createDirectory(libPath);
 
             // Use circup to install from requirements
-            await this.runPythonCommand([
-                '-m', 'circup', 'install',
+            await this.runCircupCommand([
+                'install',
                 '-r', requirementsPath.fsPath,
                 '--path', libPath.fsPath
             ]);

@@ -80,6 +80,19 @@
 			}
 		},
 		{
+			"label": "build: tests",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build-all"],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "silent",
+				"panel": "shared",
+				"group": "build"
+			},
+			"group": "build"
+		},
+		{
 			"label": "start: blinka-repl",
 			"type": "shell",
 			"command": "python",

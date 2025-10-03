@@ -13,6 +13,10 @@ export default defineConfig({
 			formats: ['cjs'],
 			fileName: () => 'extension.js'
 		},
+		commonjsOptions: {
+			ignoreDynamicRequires: false,
+			transformMixedEsModules: true
+		},
 		rollupOptions: {
 			external: [
 				// VS Code API
@@ -53,7 +57,9 @@ export default defineConfig({
 		extensions: ['.ts', '.js']
 	},
 	define: {
-		'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production')
+		'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
+		// Ensure process global is available
+		'global': 'globalThis'
 	},
 	// Ensure Node.js environment
 	ssr: {

@@ -8,12 +8,19 @@
  * Uses VS Code Uri.joinPath() exclusively - never string concatenation.
  *
  * Resource Hierarchy:
- * - extensionUri/assets/           - Extension-bundled resources (read-only)
- * - extensionUri/venv/              - Python virtual environment (created once, shared)
- * - globalStorageUri/bundles/       - Downloaded CircuitPython bundles (persistent cache)
- * - globalStorageUri/workspaces/    - User workspaces (persistent user data)
+ * - extensionUri/assets/              - Extension-bundled resources (read-only)
+ * - extensionUri/venv/                - Python virtual environment (created once, shared)
+ * - globalStorageUri/resources/bundles/         - Downloaded CircuitPython bundles (persistent cache)
+ * - globalStorageUri/workspaces/      - User workspaces (persistent user data)(?)
  * - globalStorageUri/bin/wasm-runtime/ - WASM runtime binaries (persistent cache)
- * - globalStorageUri/config/        - Extension configuration (persistent settings)
+ * - globalStorageUri/resources/       - Generated data files (module lists, manifests)
+ * - globalStorageUri/.mu2/config/          - Extension configuration (user settings)
+ * - globalStorageUri/.mu2/logs/       - Development and diagnostic logs
+ *
+ * IMPORTANT DISTINCTIONS:
+ * - resources/ = Generated/cached data (e.g., CircuitPython module lists, bundle manifests)
+ * - config/ = User-modifiable settings and preferences
+ * - .mu2/logs/ = Diagnostic output files (development logs, error traces)
  */
 
 import * as vscode from 'vscode';
@@ -27,7 +34,9 @@ export enum ResourceType {
   BUNDLE = 'BUNDLE',            // CircuitPython library bundles
   WORKSPACE = 'WORKSPACE',      // User workspaces
   WASM = 'WASM',                // WASM runtime
-  CONFIG = 'CONFIG'             // Persistent configuration
+  RESOURCE = 'RESOURCE',        // Generated data files
+  CONFIG = 'CONFIG',            // Persistent configuration
+  LOG = 'LOG'                   // Diagnostic logs
 }
 
 /**
@@ -39,7 +48,9 @@ export interface ResourcePaths {
   bundles: vscode.Uri;
   workspaces: vscode.Uri;
   wasmRuntime: vscode.Uri;
+  resources: vscode.Uri;
   config: vscode.Uri;
+  logs: vscode.Uri;
 }
 
 /**
@@ -71,8 +82,30 @@ export class ResourceLocator {
       bundles: this.getBundlesRoot(),
       workspaces: this.getWorkspacesRoot(),
       wasmRuntime: this.getWasmRuntimePath(),
-      config: this.getConfigPath()
+      resources: this.getResourcesPath(),
+      config: this.getConfigPath(),
+      logs: this.getLogsPath()
     };
+  }
+
+  // ========================================================================
+  // CORE PATHS
+  // ========================================================================
+
+  /**
+   * Get extension URI
+   * Location: extensionUri/
+   */
+  public getExtensionUri(): vscode.Uri {
+    return this.context.extensionUri;
+  }
+
+  /**
+   * Get global storage URI
+   * Location: globalStorageUri/
+   */
+  public getGlobalStorageUri(): vscode.Uri {
+    return this.context.globalStorageUri;
   }
 
   // ========================================================================
@@ -178,10 +211,10 @@ export class ResourceLocator {
 
   /**
    * Get bundles root directory
-   * Location: globalStorageUri/bundles/
+   * Location: globalStorageUri/resources/bundles/
    */
   public getBundlesRoot(): vscode.Uri {
-    return vscode.Uri.joinPath(this.context.globalStorageUri, 'bundles');
+    return vscode.Uri.joinPath(this.context.globalStorageUri, 'resources', 'bundles');
   }
 
   /**
@@ -226,15 +259,15 @@ export class ResourceLocator {
 
   /**
    * Get WASM runtime directory
-   * Location: globalStorageUri/bin/wasm-runtime/
+   * Location: globalStorageUri/bin/
    */
   public getWasmRuntimePath(): vscode.Uri {
-    return vscode.Uri.joinPath(this.context.globalStorageUri, 'bin', 'wasm-runtime');
+    return vscode.Uri.joinPath(this.context.globalStorageUri, 'bin');
   }
 
   /**
    * Get WASM runtime binary path
-   * Location: globalStorageUri/bin/wasm-runtime/{binaryName}
+   * Location: globalStorageUri/bin/{binaryName}
    */
   public getWasmBinaryPath(binaryName: string): vscode.Uri {
     return vscode.Uri.joinPath(this.getWasmRuntimePath(), binaryName);
@@ -261,15 +294,15 @@ export class ResourceLocator {
    * Location: globalStorageUri/config/
    */
   public getConfigPath(): vscode.Uri {
-    return vscode.Uri.joinPath(this.context.globalStorageUri, 'config');
+    return vscode.Uri.joinPath(this.context.globalStorageUri, '.mu2', 'config');
   }
 
   /**
    * Get persistent module list path
-   * Location: globalStorageUri/config/circuitpython-modules.json
+   * Location: globalStorageUri/resources/circuitpython-modules.json
    */
   public getPersistentModuleListPath(): vscode.Uri {
-    return vscode.Uri.joinPath(this.getConfigPath(), 'circuitpython-modules.json');
+    return vscode.Uri.joinPath(this.getResourcesPath(), 'circuitpython-modules.json');
   }
 
   /**
@@ -278,6 +311,22 @@ export class ResourceLocator {
    */
   public getConfigFilePath(filename: string): vscode.Uri {
     return vscode.Uri.joinPath(this.getConfigPath(), filename);
+  }
+
+  /**
+   * Get logs root directory
+   * Location: globalStorageUri/.mu2/logs/
+   */
+  public getLogsPath(): vscode.Uri {
+    return vscode.Uri.joinPath(this.context.globalStorageUri, '.mu2', 'logs');
+  }
+
+  /**
+   * Get specific log file path
+   * Location: globalStorageUri/.mu2/logs/{filename}
+   */
+  public getLogFilePath(filename: string): vscode.Uri {
+    return vscode.Uri.joinPath(this.getLogsPath(), filename);
   }
 
   // ========================================================================
@@ -356,12 +405,14 @@ export class ResourceLocator {
   public getResourceType(uri: vscode.Uri): ResourceType | undefined {
     const uriStr = uri.toString();
 
-    if (uriStr.includes('/assets/')) return ResourceType.ASSET;
-    if (uriStr.includes('/venv/')) return ResourceType.VENV;
-    if (uriStr.includes('/bundles/')) return ResourceType.BUNDLE;
-    if (uriStr.includes('/workspaces/')) return ResourceType.WORKSPACE;
-    if (uriStr.includes('/wasm-runtime/')) return ResourceType.WASM;
-    if (uriStr.includes('/config/')) return ResourceType.CONFIG;
+    if (uriStr.includes('/assets/')) {return ResourceType.ASSET};
+    if (uriStr.includes('/venv/')) {return ResourceType.VENV};
+    if (uriStr.includes('/bundles/')) {return ResourceType.BUNDLE};
+    if (uriStr.includes('/workspaces/')) {return ResourceType.WORKSPACE};
+    if (uriStr.includes('/wasm-runtime/')) {return ResourceType.WASM};
+    if (uriStr.includes('/resources/')) {return ResourceType.RESOURCE};
+    if (uriStr.includes('/config/')) {return ResourceType.CONFIG};
+    if (uriStr.includes('/.mu2/logs/')) {return ResourceType.LOG};
 
     return undefined;
   }
@@ -378,7 +429,9 @@ export class ResourceLocator {
     logger(`Bundles:    ${paths.bundles.fsPath}`);
     logger(`Workspaces: ${paths.workspaces.fsPath}`);
     logger(`WASM:       ${paths.wasmRuntime.fsPath}`);
+    logger(`Resources:  ${paths.resources.fsPath}`);
     logger(`Config:     ${paths.config.fsPath}`);
+    logger(`Logs:       ${paths.logs.fsPath}`);
     logger('==============================');
   }
 }

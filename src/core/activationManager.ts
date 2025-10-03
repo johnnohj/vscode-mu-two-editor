@@ -16,6 +16,7 @@ import { MuTwoWorkspace } from '../workspace/workspace';
 import { ensureSimplePythonVenv, setPythonEnvironmentVariables } from '../utils/simpleVenv';
 import { LanguageOverrideManager } from '../services/languageOverrideManager';
 import { registerLibraryManager, registerWorkspaceProjectsProvider } from './componentManager';
+import { getResourceLocator } from './resourceLocator';
 
 const logger = getLogger();
 
@@ -35,7 +36,7 @@ let languageOverrideManager: LanguageOverrideManager;
  * Initialize core infrastructure
  * This always succeeds - no external dependencies
  */
-export function initializeCore(context: vscode.ExtensionContext): ComponentRegistry {
+export async function initializeCore(context: vscode.ExtensionContext): Promise<ComponentRegistry> {
     logger.info('ACTIVATION', 'Initializing core infrastructure...');
 
     // Initialize component registry
@@ -44,10 +45,14 @@ export function initializeCore(context: vscode.ExtensionContext): ComponentRegis
     // Initialize file system provider early for settings/config access
     initializeFileSystemProvider(context, componentRegistry);
 
-    // Create required directories (non-blocking)
-    createDirectories(context).catch(error => {
-        logger.warn('ACTIVATION', 'Failed to create directories:', error);
-    });
+    // Create required directories (blocking for tests)
+    try {
+        await createDirectories(context);
+        logger.info('ACTIVATION', 'Directories created successfully');
+    } catch (error) {
+        logger.error('ACTIVATION', 'CRITICAL: Failed to create directories:', error);
+        throw error; // Re-throw to see the error in tests
+    }
 
     logger.info('ACTIVATION', 'Core infrastructure initialized');
     return componentRegistry;
@@ -102,16 +107,16 @@ export async function initializeEssentialServices(
 	// Initialize Python environment manager (simplified - detects existing venv)
 	pythonEnvManager = await initializePythonEnvironment(
 		context,
-		stateManager,
+		componentRegistry,
 		options
 	)
 
 	// Initialize task provider (keep existing if needed for compatibility)
-	taskProvider = initializeTaskProvider(context, stateManager)
+	taskProvider = initializeTaskProvider(context, componentRegistry)
 
 	// Initialize core device services
-	deviceManager = initializeDeviceManager(context, stateManager)
-	languageClient = initializeLanguageClient(context, stateManager)
+	deviceManager = initializeDeviceManager(context, componentRegistry)
+	languageClient = initializeLanguageClient(context, componentRegistry)
 	// Phase 2: MuDeviceDetector replaced by DeviceRegistry
 	deviceDetector = null
 
@@ -196,7 +201,7 @@ async function initializePythonEnvironment(
 
         const venvPath = pythonEnv.getCurrentPythonPath();
         if (venvPath) {
-            stateManager.setPythonVenvActivated(venvPath);
+            componentRegistry.setPythonVenvActivated(venvPath);
             logger.info('ACTIVATION', 'Python environment manager initialized successfully');
         } else {
             logger.warn('ACTIVATION', 'No Python environment found by PythonEnvManager');
@@ -206,14 +211,14 @@ async function initializePythonEnvironment(
 
         // Register library manager and workspace projects provider now that Python environment is available
         try {
-            registerLibraryManager(context, pythonEnv, stateManager);
+            registerLibraryManager(context, pythonEnv, componentRegistry);
             logger.info('ACTIVATION', 'Library manager registered successfully');
         } catch (error) {
             logger.warn('ACTIVATION', 'Failed to register library manager:', error);
         }
 
         try {
-            registerWorkspaceProjectsProvider(context, pythonEnv, stateManager);
+            registerWorkspaceProjectsProvider(context, pythonEnv, componentRegistry);
             logger.info('ACTIVATION', 'Workspace projects provider registered successfully');
         } catch (error) {
             logger.warn('ACTIVATION', 'Failed to register workspace projects provider:', error);
@@ -223,7 +228,7 @@ async function initializePythonEnvironment(
 
     } catch (error) {
         logger.warn('ACTIVATION', 'Python environment manager initialization failed:', error);
-        stateManager.setPythonVenvFailed(error instanceof Error ? error.message : String(error));
+        // Note: ComponentRegistry doesn't have setPythonVenvFailed - just log the error
         return null;
     }
 }
@@ -325,11 +330,10 @@ function initializeDeviceDetector(componentRegistry: ComponentRegistry): MuDevic
 async function createDirectories(context: vscode.ExtensionContext): Promise<void> {
 	const resourceLocator = getResourceLocator();
     const directories = [
-		// Mu 2's terminal shell handles creating our extension's venv,
-		// the files for which are included in globalStorage
+			// Mu 2 core directories
 			vscode.Uri.joinPath(context.globalStorageUri, '.mu2'),
 			vscode.Uri.joinPath(context.globalStorageUri, '.mu2', 'data'),
-			vscode.Uri.joinPath(context.globalStorageUri, '.mu2', 'logs'),
+			resourceLocator.getLogsPath(), // .mu2/logs via ResourceLocator
 			// WASM runtime
 			resourceLocator.getWasmRuntimePath(),
 			// Configuration
@@ -343,14 +347,21 @@ async function createDirectories(context: vscode.ExtensionContext): Promise<void
 			resourceLocator.getBundlesRoot(),
 		]
 
-    await Promise.all(
-        directories.map(dir =>
-            vscode.workspace.fs.createDirectory(dir).then(
-                () => {},
-                () => {} // Ignore errors
-            )
-        )
-    );
+    // Create directories, logging any errors but don't fail activation
+    for (const dir of directories) {
+        try {
+            await vscode.workspace.fs.createDirectory(dir);
+            logger.debug('ACTIVATION', `Created directory: ${dir.fsPath}`);
+        } catch (error) {
+            // FileSystemError with code 'FileExists' is expected and OK
+            if (error instanceof vscode.FileSystemError && error.code === 'FileExists') {
+                logger.debug('ACTIVATION', `Directory already exists: ${dir.fsPath}`);
+            } else {
+                logger.error('ACTIVATION', `Failed to create directory ${dir.fsPath}:`, error);
+                // Don't throw - allow activation to continue
+            }
+        }
+    }
 }
 
 

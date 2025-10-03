@@ -96,9 +96,23 @@ export class PythonEnvManager {
 	}
 
 	/**
-	 * Get the current Python path
+	 * Get the current Python executable path
+	 * Returns the full path to python.exe, not the venv directory
 	 */
 	getCurrentPythonPath(): string | undefined {
+		if (!this.muTwoEnvPath) {
+			return undefined;
+		}
+
+		// Return the Python executable path, not the venv directory
+		const resourceLocator = getResourceLocator();
+		return resourceLocator.getPythonExecutablePath().fsPath;
+	}
+
+	/**
+	 * Get the current venv directory path
+	 */
+	getCurrentVenvPath(): string | undefined {
 		return this.muTwoEnvPath;
 	}
 

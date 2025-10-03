@@ -549,10 +549,10 @@ let devLogger: DevLogger | undefined;
 export function initDevLogger(context: vscode.ExtensionContext): DevLogger {
   const outputChannel = vscode.window.createOutputChannel('Mu Two (Dev)', { log: true });
 
-  // Create log file path in global storage
+  // Create log file path using ResourceLocator
   const logFileName = `mu2-dev-${new Date().toISOString().split('T')[0]}.log`;
   const resourceLocator = getResourceLocator();
-  const logFileUri = vscode.Uri.joinPath(resourceLocator.getGlobalStorageUri(), 'logs', logFileName);
+  const logFileUri = resourceLocator.getLogFilePath(logFileName);
 
   // Get configuration from VS Code settings
   const config = vscode.workspace.getConfiguration('muTwo.dev');
