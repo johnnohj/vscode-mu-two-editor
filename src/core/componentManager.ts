@@ -45,7 +45,7 @@ export function registerUIComponents(
     // Create REPL webview provider
     const resourceLocator = getResourceLocator();
     webviewViewProvider = new ReplViewProvider(resourceLocator.getExtensionUri(), context);
-    componentRegistry.register('viewProvider', webviewViewProvider);
+    componentRegistry.register('webviewViewProvider', webviewViewProvider);
 
     // Register webview provider
     context.subscriptions.push(

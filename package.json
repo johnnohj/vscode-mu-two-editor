@@ -69,7 +69,7 @@
 				},
 				{
 					"id": "muTwo.libraryManager",
-					"name": "CircuitPython Libraries",
+					"name": "Workspace Libraries",
 					"when": "workspaceHasProjectsFolder"
 				}
 			]
@@ -318,6 +318,11 @@
 				"command": "muTwo.showView",
 				"category": "Mu 2",
 				"title": "Show REPL Panel"
+			},
+			{
+				"command": "muTwo.installPythonDependencies",
+				"category": "Mu 2",
+				"title": "Ensure Environment Setup"
 			},
 			{
 				"command": "muTwo.workspace.refresh",

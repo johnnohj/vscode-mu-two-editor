@@ -543,6 +543,10 @@ function registerPythonCommands(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('muTwo.setupPythonEnvironment', async () => {
             await setupPythonEnvironmentCommand(context);
+        }),
+
+        vscode.commands.registerCommand('muTwo.installPythonDependencies', async () => {
+            await installPythonDependenciesCommand(context);
         })
     );
 }
@@ -972,6 +976,58 @@ async function setupPythonEnvironmentCommand(context: vscode.ExtensionContext): 
         ).then(selection => {
             if (selection === 'Show Logs') {
                 vscode.commands.executeCommand('workbench.action.toggleDevTools');
+            }
+        });
+    }
+}
+
+/**
+ * Ensure Python environment is set up with all required dependencies
+ * Installs circup, pyserial, and other requirements from requirements.txt
+ */
+async function installPythonDependenciesCommand(context: vscode.ExtensionContext): Promise<void> {
+    try {
+        const { installRequirements } = await import('../utils/simpleVenv');
+        const { getResourceLocator } = await import('./resourceLocator');
+
+        const resourceLocator = getResourceLocator();
+        const pythonPath = resourceLocator.getPythonExecutablePath().fsPath;
+
+        // Check if Python venv exists
+        try {
+            await vscode.workspace.fs.stat(resourceLocator.getPythonExecutablePath());
+        } catch {
+            vscode.window.showErrorMessage('Python virtual environment not found. Please restart VS Code to create it.');
+            return;
+        }
+
+        // Show progress notification
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Setting up Python environment",
+            cancellable: false
+        }, async (progress) => {
+            progress.report({ increment: 0, message: "Installing circup, pyserial, and other dependencies..." });
+
+            const success = await installRequirements(pythonPath, context);
+
+            if (success) {
+                vscode.window.showInformationMessage('✅ Python environment setup complete! All dependencies installed.');
+            } else {
+                vscode.window.showWarningMessage('⚠️ Environment setup completed with warnings. Check the logs for details.');
+            }
+        });
+
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error('COMMANDS', 'Failed to setup Python environment', error);
+
+        vscode.window.showErrorMessage(
+            `Failed to setup Python environment: ${errorMessage}`,
+            'Show Logs'
+        ).then(selection => {
+            if (selection === 'Show Logs') {
+                vscode.commands.executeCommand('muTwo.dev.showOutputChannel');
             }
         });
     }

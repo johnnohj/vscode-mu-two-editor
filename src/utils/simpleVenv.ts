@@ -80,25 +80,24 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
                                 async () => {
                                     // Success - Python executable exists
                                     logger.info('VENV', `✅ Python venv created successfully at: ${venvPath}`);
-                                    progress.report({ increment: 40, message: "Installing dependencies..." });
-                                    notifyReplVenvProgress(40, "Installing dependencies...");
-
-                                    // Install requirements.txt
-                                    const installed = await installRequirements(pythonExe.fsPath, context);
-
-                                    if (installed) {
-                                        progress.report({ increment: 100, message: "Python environment ready!" });
-                                        notifyReplVenvProgress(100, "Python environment ready!");
-                                        logger.info('VENV', `✅ Dependencies installed successfully`);
-                                    } else {
-                                        progress.report({ increment: 100, message: "Python environment ready (check logs)" });
-                                        notifyReplVenvProgress(100, "Python environment ready");
-                                        logger.warn('VENV', `⚠️ Some dependencies may not have installed - check logs`);
-                                    }
+                                    progress.report({ increment: 100, message: "Python environment created!" });
+                                    notifyReplVenvProgress(100, "Python environment created!");
 
                                     // Set venv ready state for REPL
                                     const { ReplViewProvider } = await import('../providers/views/replViewProvider');
                                     ReplViewProvider.setVenvReady(true);
+
+                                    // Prompt user to reload window for shell integration to pick up new venv
+                                    const reload = await vscode.window.showInformationMessage(
+                                        'Python virtual environment created. Reload window to activate it in terminals?',
+                                        'Reload Window',
+                                        'Later'
+                                    );
+
+                                    if (reload === 'Reload Window') {
+                                        await vscode.commands.executeCommand('workbench.action.reloadWindow');
+                                    }
+
                                     resolve(venvPath);
                                 },
                                 () => {
@@ -122,25 +121,24 @@ export async function ensureSimplePythonVenv(context: vscode.ExtensionContext): 
                         vscode.workspace.fs.stat(pythonExe).then(
                             async () => {
                                 logger.info('VENV', `✅ Python venv created successfully (detected via timeout): ${venvPath}`);
-                                progress.report({ increment: 40, message: "Installing dependencies..." });
-                                notifyReplVenvProgress(40, "Installing dependencies...");
-
-                                // Install requirements.txt
-                                const installed = await installRequirements(pythonExe.fsPath, context);
-
-                                if (installed) {
-                                    progress.report({ increment: 100, message: "Python environment ready!" });
-                                    notifyReplVenvProgress(100, "Python environment ready!");
-                                    logger.info('VENV', `✅ Dependencies installed successfully`);
-                                } else {
-                                    progress.report({ increment: 100, message: "Python environment ready (check logs)" });
-                                    notifyReplVenvProgress(100, "Python environment ready");
-                                    logger.warn('VENV', `⚠️ Some dependencies may not have installed - check logs`);
-                                }
+                                progress.report({ increment: 100, message: "Python environment created!" });
+                                notifyReplVenvProgress(100, "Python environment created!");
 
                                 // Set venv ready state for REPL
                                 const { ReplViewProvider } = await import('../providers/views/replViewProvider');
                                 ReplViewProvider.setVenvReady(true);
+
+                                // Prompt user to reload window for shell integration to pick up new venv
+                                const reload = await vscode.window.showInformationMessage(
+                                    'Python virtual environment created. Reload window to activate it in terminals?',
+                                    'Reload Window',
+                                    'Later'
+                                );
+
+                                if (reload === 'Reload Window') {
+                                    await vscode.commands.executeCommand('workbench.action.reloadWindow');
+                                }
+
                                 resolve(venvPath);
                             },
                             () => {
@@ -217,7 +215,7 @@ export function setPythonEnvironmentVariables(venvPath: string, context: vscode.
 function notifyReplVenvReady(): void {
     try {
         // Get the REPL webview provider from component manager
-        const { webviewViewProvider } = require('../core/componentManager');
+        const { webviewViewProvider } = import('../core/componentManager');
 
         if (webviewViewProvider && typeof webviewViewProvider.sendMessage === 'function') {
             webviewViewProvider.sendMessage({
@@ -239,7 +237,7 @@ function notifyReplVenvReady(): void {
 function notifyReplVenvProgress(progress: number, message: string): void {
     try {
         // Get the REPL webview provider from component manager
-        const { webviewViewProvider } = require('../core/componentManager');
+        const { webviewViewProvider } = import('../core/componentManager');
 
         if (webviewViewProvider && typeof webviewViewProvider.sendMessage === 'function') {
             webviewViewProvider.sendMessage({
@@ -260,8 +258,9 @@ function notifyReplVenvProgress(progress: number, message: string): void {
 
 /**
  * Install requirements from extension's requirements.txt file
+ * Can be called manually via command or automatically during setup
  */
-async function installRequirements(pythonPath: string, context: vscode.ExtensionContext): Promise<boolean> {
+export async function installRequirements(pythonPath: string, context: vscode.ExtensionContext): Promise<boolean> {
     try {
         const resourceLocator = getResourceLocator();
 

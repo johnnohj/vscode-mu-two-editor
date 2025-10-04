@@ -120,74 +120,26 @@ export class LibraryManagerProvider implements vscode.TreeDataProvider<LibraryTr
     }
 
     /**
-     * Get children for tree view
+     * Get children for tree view - simplified to show only workspace libraries
      */
     async getChildren(element?: LibraryTreeItem): Promise<LibraryTreeItem[]> {
         if (!element) {
-            // Root level - show main categories
-            return this.getRootCategories();
-        }
-
-        if (element.itemType === 'category') {
-            return this.getCategoryChildren(element.label);
+            // Root level - show workspace libraries directly (no categories)
+            return await this.getWorkspaceLibraries();
         }
 
         return [];
     }
 
     /**
-     * Get root categories
+     * Get workspace libraries (simplified - no categories, just libraries)
      */
-    private getRootCategories(): LibraryTreeItem[] {
-        const categories: LibraryTreeItem[] = [
-            new LibraryTreeItem(
-                'Installed Libraries',
-                'category',
-                undefined,
-                undefined,
-                vscode.TreeItemCollapsibleState.Expanded
-            ),
-            new LibraryTreeItem(
-                'Available Libraries',
-                'category',
-                undefined,
-                undefined,
-                vscode.TreeItemCollapsibleState.Collapsed
-            )
-        ];
-
-        return categories;
-    }
-
-    /**
-     * Get children for a specific category
-     */
-    private async getCategoryChildren(categoryName: string): Promise<LibraryTreeItem[]> {
+    private async getWorkspaceLibraries(): Promise<LibraryTreeItem[]> {
         if (!this.bundleManager) {
-            return [new LibraryTreeItem('Bundle manager not available', 'loading')];
-        }
-
-        try {
-            switch (categoryName) {
-                case 'Installed Libraries':
-                    return await this.getInstalledLibraries();
-                case 'Available Libraries':
-                    return await this.getAvailableLibraries();
-                default:
-                    return [];
-            }
-        } catch (error) {
-            this.logger.error('LIBRARY_MANAGER', `Error getting category children: ${error}`);
-            return [new LibraryTreeItem('Error loading libraries', 'loading')];
-        }
-    }
-
-    /**
-     * Get installed libraries in workspace
-     */
-    private async getInstalledLibraries(): Promise<LibraryTreeItem[]> {
-        if (!this.bundleManager) {
-            return [];
+            return [
+                new LibraryTreeItem('Python environment not ready', 'loading'),
+                new LibraryTreeItem('→ Reload window if you just created venv', 'loading')
+            ];
         }
 
         try {
@@ -203,18 +155,20 @@ export class LibraryManagerProvider implements vscode.TreeDataProvider<LibraryTr
 
             if (filteredLibs.length === 0) {
                 const message = this.searchFilter
-                    ? `No installed libraries match "${this.searchFilter}"`
-                    : 'No libraries installed in workspace';
+                    ? `No libraries match "${this.searchFilter}"`
+                    : '📚 No libraries in workspace lib/ folder';
                 return [new LibraryTreeItem(message, 'loading')];
             }
 
-            return filteredLibs.map(lib =>
-                new LibraryTreeItem(lib.name, 'library', lib, true)
-            );
+            // Show libraries with icon indicating type (file vs directory)
+            return filteredLibs.map(lib => {
+                const icon = lib.isDirectory ? '📦' : '📄';
+                return new LibraryTreeItem(`${icon} ${lib.name}`, 'library', lib, true);
+            });
 
         } catch (error) {
-            this.logger.error('LIBRARY_MANAGER', `Error getting installed libraries: ${error}`);
-            return [new LibraryTreeItem('Error loading installed libraries', 'loading')];
+            this.logger.error('LIBRARY_MANAGER', `Error getting workspace libraries: ${error}`);
+            return [new LibraryTreeItem('Error loading libraries', 'loading')];
         }
     }
 
@@ -394,13 +348,27 @@ export class LibraryManagerProvider implements vscode.TreeDataProvider<LibraryTr
     }
 
     /**
-     * Download and install the CircuitPython bundle
+     * Open bundle manager webview panel
+     */
+    public async openBundleManager(): Promise<void> {
+        // Show information message with plan to implement webview
+        vscode.window.showInformationMessage(
+            'Bundle Manager webview panel will be implemented here. For now, use circup commands in the terminal.',
+            'Open Terminal'
+        ).then(selection => {
+            if (selection === 'Open Terminal') {
+                vscode.commands.executeCommand('workbench.action.terminal.new');
+            }
+        });
+    }
+
+    /**
+     * DEPRECATED: Download and install the CircuitPython bundle
+     * This method is replaced by openBundleManager()
      */
     public async downloadBundle(): Promise<void> {
-        if (!this.bundleManager) {
-            vscode.window.showErrorMessage('Bundle manager not available');
-            return;
-        }
+        // Redirect to bundle manager
+        return this.openBundleManager();
 
         try {
             const success = await this.bundleManager.downloadAndInstallBundle();

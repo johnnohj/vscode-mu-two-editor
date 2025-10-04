@@ -17,8 +17,8 @@ export interface PythonEnvironmentInfo {
 /**
  * REFACTORED PythonEnvManager - Focus on Detection & VS Code Integration Only
  *
- * This class now serves as a lightweight detector and integrator for Python environments
- * created by the MuTwoTerminalProfile. It no longer creates venvs or installs packages.
+ * This class serves as a lightweight detector and integrator for Python environments
+ * created by simpleVenv.ts. It no longer creates venvs or installs packages.
  *
  * Responsibilities:
  * - Detect existing Python virtual environments
@@ -26,9 +26,9 @@ export interface PythonEnvironmentInfo {
  * - Configure VS Code Python extension to use detected environment
  * - Provide environment info to other extension components
  *
- * NOT Responsible For (handled by MuTwoTerminalProfile):
- * - Creating virtual environments
- * - Installing Python packages
+ * NOT Responsible For (handled by simpleVenv.ts and user commands):
+ * - Creating virtual environments (see simpleVenv.ts)
+ * - Installing Python packages (see muTwo.installPythonDependencies command)
  * - System Python operations
  */
 export class PythonEnvManager {
@@ -48,7 +48,7 @@ export class PythonEnvManager {
 
 	/**
 	 * REFACTORED: Only detect and configure existing Python environments
-	 * Does NOT create environments - that's handled by MuTwoTerminalProfile
+	 * Does NOT create environments - that's handled by simpleVenv.ts during activation
 	 */
 	async initialize(): Promise<void> {
 		const devLogger = getDevLogger();
@@ -146,38 +146,22 @@ export class PythonEnvManager {
 
 	/**
 	 * REFACTORED: Detect existing Python environment in standard locations
+	 * Returns path without validation - caller will validate
 	 */
 	private async detectExistingEnvironment(): Promise<string | undefined> {
-		// Check cached path first
+		// Check cached path first (trust cache, validation happens in initialize())
 		const cachedPath = this.context.globalState.get<string>('muTwo.pythonEnvPath');
 		if (cachedPath) {
-			logger.info('PYTHON_ENV', `Checking cached Python environment: ${cachedPath}`);
-			if (await this.validateEnvironment(cachedPath)) {
-				return cachedPath;
-			} else {
-				logger.warn('PYTHON_ENV', 'Cached Python environment is invalid, clearing cache');
-				await this.context.globalState.update('muTwo.pythonEnvPath', undefined);
-			}
+			logger.info('PYTHON_ENV', `Using cached Python environment: ${cachedPath}`);
+			return cachedPath;
 		}
 
-		// Check standard locations where MuTwoTerminalProfile creates venvs
+		// Return standard venv location
 		const resourceLocator = getResourceLocator();
-		const standardPaths = [
-			resourceLocator.getVenvPath().fsPath,
-		];
+		const venvPath = resourceLocator.getVenvPath().fsPath;
 
-		for (const envPath of standardPaths) {
-			logger.info('PYTHON_ENV', `Checking standard location: ${envPath}`);
-			const isValid = await this.validateEnvironment(envPath);
-			logger.info('PYTHON_ENV', `Validation result for ${envPath}: ${isValid}`);
-			if (isValid) {
-				logger.info('PYTHON_ENV', `Found valid Python environment: ${envPath}`);
-				return envPath;
-			}
-		}
-
-		logger.warn('PYTHON_ENV', 'No valid Python environment found in standard locations');
-		return undefined;
+		logger.info('PYTHON_ENV', `Using standard venv location: ${venvPath}`);
+		return venvPath;
 	}
 
 	/**
@@ -255,7 +239,7 @@ export class PythonEnvManager {
 				logger.info('PYTHON_ENV', 'All expected packages are installed');
 			} else {
 				logger.warn('PYTHON_ENV', `Missing expected packages: ${missingPackages.join(', ')}`);
-				logger.info('PYTHON_ENV', 'Package installation is handled by MuTwoTerminalProfile during environment creation');
+				logger.info('PYTHON_ENV', 'Run "Mu Two: Install Python Dependencies" command to install missing packages');
 			}
 
 			logger.info('PYTHON_ENV', `Detected packages: ${installedPackages.join(', ')}`);
@@ -289,7 +273,7 @@ export class PythonEnvManager {
 
 	/**
 	 * REFACTORED: Simple command execution for read-only operations only
-	 * No longer handles package installation - that's done by MuTwoTerminalProfile
+	 * No longer handles package installation - use muTwo.installPythonDependencies command
 	 */
 	private async executeSimpleCommandForOutput(command: string, args: string[]): Promise<string> {
 		return new Promise((resolve, reject) => {
@@ -492,7 +476,7 @@ export class PythonEnvManager {
 
 	/**
 	 * REMOVED: Package update functionality
-	 * Package installation/updates are now handled by MuTwoTerminalProfile with proper safety checks
+	 * Package installation/updates are now handled by muTwo.installPythonDependencies command
 	 */
 
 	dispose(): void {

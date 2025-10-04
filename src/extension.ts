@@ -152,7 +152,7 @@ export async function activate(context: vscode.ExtensionContext) {
         setupLazyLoading(context);
 
         const duration = Date.now() - startTime;
-        devLogger.extension(`Simplified Mu 2 Extension activated successfully in ${duration}ms`);
+        devLogger.extension(`Mu 2 Extension activated successfully in ${duration}ms`);
 
     } catch (error) {
         const duration = Date.now() - startTime;
