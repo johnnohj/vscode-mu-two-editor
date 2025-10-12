@@ -1,11 +1,9 @@
 /**
  * Simple Command Handlers
- * Replaces over-engineered CLI processor with direct command implementations
  */
 
 import * as vscode from 'vscode';
 import { spawn } from 'child_process';
-// Phase 2: SimpleDeviceDetector removed - using DeviceRegistry
 import { getDeviceRegistry } from '../devices/core/deviceRegistry';
 import { ReplViewProvider } from '../providers/views/replViewProvider';
 

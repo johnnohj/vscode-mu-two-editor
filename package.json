@@ -22,9 +22,6 @@
 	"extensionDependencies": [
 		"ms-python.python"
 	],
-	"optionalExtensionDependencies": [
-		"ms-vscode.vscode-serial-monitor"
-	],
 	"activationEvents": [
 		"onLanguage:python",
 		"onCommand:muTwo.workspace.create",
@@ -36,12 +33,6 @@
 		"onFileSystem:mutwo"
 	],
 	"main": "./dist/extension.js",
-	"files": [
-		"dist/**/*",
-		"assets/**/*",
-		"README.md",
-		"LICENSE"
-	],
 	"contributes": {
 		"viewsContainers": {
 			"panel": [
@@ -49,6 +40,18 @@
 					"id": "replContainer",
 					"title": "REPL",
 					"icon": "assets/Mu2NoCirc-Red.svg"
+				}
+			],
+			"activitybar": [
+				{
+					"id": "libraryManager",
+					"title": "Mu2 Libraries",
+					"icon": "assets/Mu2.svg"
+				},
+				{
+					"id": "boardManager",
+					"title": "Mu2 Board",
+					"icon": "$(circuit-board)"
 				}
 			]
 		},
@@ -61,16 +64,48 @@
 					"icon": "assets/Mu2NoCirc-Red.svg"
 				}
 			],
+			"libraryManager": [
+				{
+					"id": "muTwo.ext.ctpyLibraries",
+					"name": "CircuitPython Libraries",
+					"when": "workspaceHasProjectsFolder",
+					"icon": "assets/Blinka.svg"
+				}
+			],
+			"boardManager": [
+				{
+					"id": "muTwo.ext.boardManager",
+					"name": "Mu2 Board View",
+					"when": "workspaceHasProjectsFolder",
+					"icon": "$(circuit-board)"
+				},
+				{
+					"type": "webview",
+					"id": "muTwo.ext.boardTwin",
+					"name": "Mu2 Board",
+					"when": "workspaceHasProjectsFolder",
+					"icon": "$(circuit-board)"
+				},
+				{
+					"type": "webview",
+					"id": "muTwo.ext.sensorBoard",
+					"name": "Mu2 Sensor",
+					"when": "workspaceHasProjectsFolder",
+					"icon": "$(circuit-board)"
+				}
+			],
 			"explorer": [
 				{
 					"id": "muTwo.workspaceProjects",
 					"name": "CircuitPython Projects",
-					"when": "workspaceHasProjectsFolder"
+					"when": "workspaceHasProjectsFolder",
+					"icon": "assets/Mu2.svg"
 				},
 				{
 					"id": "muTwo.libraryManager",
 					"name": "Workspace Libraries",
-					"when": "workspaceHasProjectsFolder"
+					"when": "workspaceHasProjectsFolder",
+					"icon": "assets/Mu2.svg"
 				}
 			]
 		},
@@ -630,23 +665,23 @@
 				"icon": "$(cloud-download)"
 			},
 			{
-				"command": "muTwo.library.refresh",
+				"command": "muTwo.ext.library.refresh",
 				"category": "CircuitPython Libraries",
 				"title": "Refresh Libraries",
 				"icon": "$(refresh)"
 			},
 			{
-				"command": "muTwo.library.install",
+				"command": "muTwo.ext.library.install",
 				"category": "CircuitPython Libraries",
 				"title": "Install Library"
 			},
 			{
-				"command": "muTwo.library.remove",
+				"command": "muTwo.ext.library.remove",
 				"category": "CircuitPython Libraries",
 				"title": "Remove Library"
 			},
 			{
-				"command": "muTwo.library.downloadBundle",
+				"command": "muTwo.ext.library.downloadBundle",
 				"category": "CircuitPython Libraries",
 				"title": "Download CircuitPython Bundle",
 				"icon": "$(cloud-download)"
@@ -839,7 +874,7 @@
 						"git-bash",
 						"pwsh"
 					],
-					"default": "bash",
+					"default": "git-bash",
 					"description": "Preferred shell for Mu 2 terminal profile",
 					"enumDescriptions": [
 						"Bash shell (Unix/Linux/WSL)",
@@ -889,7 +924,13 @@
 				},
 				"muTwo.dev.logLevel": {
 					"type": "string",
-					"enum": ["DEBUG", "INFO", "WARN", "ERROR", "SUCCESS"],
+					"enum": [
+						"DEBUG",
+						"INFO",
+						"WARN",
+						"ERROR",
+						"SUCCESS"
+					],
 					"default": "INFO",
 					"description": "Minimum log level for development output channel"
 				},
@@ -897,7 +938,20 @@
 					"type": "array",
 					"items": {
 						"type": "string",
-						"enum": ["DEVICE", "BOARD", "PYTHON", "BUNDLE", "WORKSPACE", "PROJECT", "TERMINAL", "REPL", "WASM", "FILE", "STATE", "EXTENSION"]
+						"enum": [
+							"DEVICE",
+							"BOARD",
+							"PYTHON",
+							"BUNDLE",
+							"WORKSPACE",
+							"PROJECT",
+							"TERMINAL",
+							"REPL",
+							"WASM",
+							"FILE",
+							"STATE",
+							"EXTENSION"
+						]
 					},
 					"default": [],
 					"description": "Component types to log (empty array = all components)"

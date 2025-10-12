@@ -28,11 +28,9 @@ import {
     disposeStatusBar
 } from './core/boardEventManager';
 
-// Import Phase 1 infrastructure
 import { initResourceLocator, getResourceLocator } from './core/resourceLocator';
 import { initDevLogger, getDevLogger } from './utils/devLogger';
 import { StatusBarManager } from './core/statusBarManager';
-// Import Phase 2 infrastructure
 import { initDeviceRegistry, getDeviceRegistry } from './devices/core/deviceRegistry';
 
 // Global state
@@ -50,7 +48,7 @@ let services: any = {};
  */
 export async function activate(context: vscode.ExtensionContext) {
     const startTime = Date.now();
-    logger.info('EXTENSION', '🚀 Starting simplified Mu 2 Extension activation...');
+    logger.info('EXTENSION', '🚀 Starting Mu 2 Extension activation...');
 
     // Initialize devLogger early so it's available in catch block
     let devLogger: any;
